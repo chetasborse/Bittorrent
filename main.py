@@ -1,11 +1,13 @@
 from collections import OrderedDict
 from Decode import decode
 from Encode import encode
-from Tracker import convert_to_http, make_peer_id, convert_to_peers
-import subprocess
+from Tracker import convert_to_http, make_peer_id, convert_to_peers, escape
+import subprocess, sys
+from socket import *
 
 #to convert into hash values
 import hashlib
+
 
 path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
 #path = "/home/chetas/Desktop/Chapter_2_v8.0.pptx.torrent"
@@ -29,7 +31,16 @@ is_file = True
 peer_list = []
 
 
-"""
+#Creation and opening of socket for peer to peer connection
+torrent_socket = socket(AF_INET, SOCK_STREAM)
+
+try:
+	torrent_socket.bind(('', port))
+except socket.error as e:
+	print(str(e))
+
+
+
 #To print metainfo file
 for key, value in torrent.items():
 	if type(value) == OrderedDict:
@@ -38,11 +49,14 @@ for key, value in torrent.items():
 		for key1, value1 in value.items():
 			if key1 == b'files':
 				print(f"{key1}=>{value1}\n")
-			print(f"{key1}")
+			elif key1 == b'pieces':
+				print(f"{key1}=>\n\t{value1}")
+			else:
+				print(f"{key1}")
 	else:
 		print(f"{key}=>{value}\n")
 
-"""		
+		
 		
 for key, value in torrent.items():
 	if type(value) == OrderedDict:
@@ -75,6 +89,7 @@ for key, value in torrent.items():
 #info_hash_bencode = Encoder(info_hash).encode()
 info_hash_bencode = encode(info_hash)
 info_hash_sha1 = hashlib.sha1(info_hash_bencode).digest()
+info_has = escape(info_hash_sha1)
 #info_hash_sha1 = hashlib.sha1(info_hash_bencode).hexdigest()
 #print(hashlib.sha1(info_hash_bencode).hexdigest())
 
@@ -88,7 +103,8 @@ info_hash_sha1 = hashlib.sha1(info_hash_bencode).digest()
 
 #Http request to the tracker is made here
 peer_id = make_peer_id()
-httpreq = convert_to_http(tracker, info_hash_sha1, peer_id, uploaded, downloaded, left, port)
+httpreq = convert_to_http(tracker, info_has, peer_id, uploaded, downloaded, left, port)
+
 
 data1 = subprocess.Popen(['wget', '-O', '-', httpreq],
      stdout=subprocess.PIPE).communicate()[0].strip()
@@ -101,5 +117,44 @@ for key, val in t.items():
 #Printing peers
 print("Peer List")
 for peer in peer_list:
-	print(f"ip = {peer['ip']}\tport = {peer['port']}\n")
+	print(f"ip = {peer['ip']}\tport = {peer['port']}")
 
+
+#Send message to peer
+print("Send message to peer");
+message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + bytes(8 * chr(0), "utf-8") + info_hash_sha1 + bytes(peer_id, "utf-8"));
+print(message1)
+
+#Connecting to the peers
+
+connection_established = True
+
+for peer in peer_list:
+	ip1 = peer["ip"]
+	port1 = peer["port"]
+	
+	try:
+		torrent_socket.connect((ip1, port1))
+	except:
+		print(f"Error in connecting peer: {ip1}")
+		connection_established = False
+	if connection_established:
+		break
+
+"""
+ip1 = peer_list[1]["ip"]
+port1 = peer_list[1]["port"]
+
+
+try:
+	torrent_socket.connect((ip1, port1))
+except:
+	print("Error in connecting")
+	sys.exit()
+"""
+
+torrent_socket.send(message1)
+Response = torrent_socket.recv(2048)
+print(Response.decode("utf-8"))
+
+torrent_socket.close()

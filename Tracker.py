@@ -28,10 +28,10 @@ def make_peer_id():
 def convert_to_http(tracker, has, peer_id, uploaded, downloaded, left, port):
 	#tracker="http://91.217.91.21:3218/scrape"
 	http_req = ''
-	has_escape = escape(has)
+	#has_escape = escape(has)
 	#print(has_escape)
 	#has_escape = bytes.fromhex(has)
-	http_req = tracker + "?" + "info_hash=" + has_escape + "&peer_id=" + peer_id + "&uploaded=" + str(uploaded) + "&downloaded=" + str(downloaded) + "&left=" + str(left) + "&port=6889&compact=1"
+	http_req = tracker + "?" + "info_hash=" + has + "&peer_id=" + peer_id + "&uploaded=" + str(uploaded) + "&downloaded=" + str(downloaded) + "&left=" + str(left) + "&port=6889&compact=1"
 	return http_req
 	
 def convert_to_peers(data):
@@ -47,7 +47,7 @@ def convert_to_peers(data):
 		while j < 8:
 			num = heci[i : i + 2]
 			num1 = str(int(num, 16))
-			ip += num1 + ":"
+			ip += num1 + "."
 			j += 2
 			i += 2
 		ip = ip[0: len(ip) - 1]
