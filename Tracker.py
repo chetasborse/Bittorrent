@@ -31,7 +31,7 @@ def convert_to_http(tracker, has, peer_id, uploaded, downloaded, left, port):
 	#has_escape = escape(has)
 	#print(has_escape)
 	#has_escape = bytes.fromhex(has)
-	http_req = tracker + "?" + "info_hash=" + has + "&peer_id=" + peer_id + "&uploaded=" + str(uploaded) + "&downloaded=" + str(downloaded) + "&left=" + str(left) + "&port=6889&compact=1"
+	http_req = tracker + "?" + "info_hash=" + has + "&peer_id=" + peer_id + "&uploaded=" + str(uploaded) + "&downloaded=" + str(downloaded) + "&left=" + str(left) + "&port=" + str(port) + "&compact=1"
 	return http_req
 	
 def convert_to_peers(data):
