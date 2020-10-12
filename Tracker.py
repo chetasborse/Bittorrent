@@ -35,31 +35,47 @@ def convert_to_http(tracker, has, peer_id, uploaded, downloaded, left, port):
 	return http_req
 	
 def convert_to_peers(data):
-	heci = data.hex()
-	#print(heci)
-	n = len(heci)
-	peerlist = []
-	i = 0
-	while i < n:
-		j = 0
-		ip = ''
-		port = 0
-		while j < 8:
-			num = heci[i : i + 2]
-			num1 = str(int(num, 16))
-			ip += num1 + "."
-			j += 2
-			i += 2
-		ip = ip[0: len(ip) - 1]
-		num = heci[i : i + 4]
-		port = str(int(num, 16))
-		i += 4
-		dic = {
-			"ip": ip,
-			"port": port
-		}
-		peerlist.append(dic)
-	return peerlist
+	if type(data) == list:
+		peerlist = []
+		for indi in data:
+			for key, val in indi.items():
+				if key == b'ip':
+					ip1 = val.decode('ascii')
+				if key == b'port':
+					port = str(val)
+			dic = {
+				"ip": ip1,
+				"port": port
+			}
+			peerlist.append(dic)
+		return peerlist			
+
+	else:
+		heci = data.hex()
+		#print(heci)
+		n = len(heci)
+		peerlist = []
+		i = 0
+		while i < n:
+			j = 0
+			ip = ''
+			port = 0
+			while j < 8:
+				num = heci[i : i + 2]
+				num1 = str(int(num, 16))
+				ip += num1 + "."
+				j += 2
+				i += 2
+			ip = ip[0: len(ip) - 1]
+			num = heci[i : i + 4]
+			port = str(int(num, 16))
+			i += 4
+			dic = {
+				"ip": ip,
+				"port": port
+			}
+			peerlist.append(dic)
+		return peerlist
 	
 	
 	
