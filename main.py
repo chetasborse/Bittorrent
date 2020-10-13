@@ -32,12 +32,13 @@ peer_id = make_peer_id()
 port = 6889
 info_hash = ''
 is_file = True
+single_piece_len = 0
 peer_list = []
 available_peers = []
 tracker_list = []
 
 
-"""
+
 #To print metainfo file
 for key, value in torrent.items():
 	if type(value) == OrderedDict:
@@ -53,7 +54,7 @@ for key, value in torrent.items():
 	else:
 		print(f"{key}=>{value}\n")
 #Printing part ends here
-"""
+
 		
 		
 for key, value in torrent.items():
@@ -77,6 +78,8 @@ for key, value in torrent.items():
 			elif key1 == b'length':
 				left = int(value1)
 				#print(left)
+			elif key1 == b'piece length':
+				single_piece_len = value1
 	else:
 		if key == b'announce-list':
 			for trac in value:
@@ -87,6 +90,9 @@ for key, value in torrent.items():
 					tracker_list.append({"trac": tracker1, "type": "udp"})
 				elif tracker1[0] == "h":
 					tracker_list.append({"trac": tracker1, "type": "http"})
+
+
+print(f"Size: {left}, len: {single_piece_len}\ntot: {left / single_piece_len}")
 
 
 #creating an info hash for the file				
@@ -199,8 +205,11 @@ message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + by
 
 def connect_to_peer(ip, port):
 	global message1
+	global peer_list
+	global info_hash_sha1
 	pres = True
 	client_socket = socket(AF_INET, SOCK_STREAM)
+	#client_socket.settimeout(5.0)
 	try:
 		client_socket.connect((ip, int(port)))
 	except:
@@ -210,9 +219,24 @@ def connect_to_peer(ip, port):
 		client_socket.send(message1)
 		Response = client_socket.recv(4096)
 		Response2 = b''
-		if len(Response) != 0:
+		
+		pstrlen = unpack("B", Response[0: 1])[0]
+		nu = 9 + pstrlen
+		info_hash_rep = Response[nu: nu + 20]
+		if len(Response) != 0 and info_hash_rep == info_hash_sha1:
+			print(f"\nFrom: {ip}\nMessage1: {Response}\nLength: {len(Response)}\n")
+			"""
 			Response2 = client_socket.recv(4096)
-			print(f"\nFrom: {ip}\nMessage1: {Response}\nMessage2: {Response2}\n")
+			print(f"\nFrom: {ip}\nMessage1: {Response}\nMessage2: {Response2}\nLength: {len(Response)}\n")
+			try:
+				Res = client_socket.recv(4096)
+				print(f"\nFrom: {ip}, Mess: {Res}")
+			except:
+				print(f"Error for {ip}")
+			"""
+		else:
+			peer_list.remove({"ip": ip, "port": port})
+			
 	client_socket.close()
 		
 for peer in peer_list:
@@ -224,6 +248,11 @@ for peer in peer_list:
 	
 for thr in peer_thread_list:
 	thr.join()
+
+print("Available Peer List")
+for peer in peer_list:
+	print(f"ip = {peer['ip']}\tport = {peer['port']}")
+	
 	
 #Connecting to peers ends here
 
