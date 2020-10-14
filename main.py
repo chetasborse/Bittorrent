@@ -36,6 +36,7 @@ single_piece_len = 0
 peer_list = []
 available_peers = []
 tracker_list = []
+peers_available = []
 
 
 
@@ -90,6 +91,9 @@ for key, value in torrent.items():
 					tracker_list.append({"trac": tracker1, "type": "udp"})
 				elif tracker1[0] == "h":
 					tracker_list.append({"trac": tracker1, "type": "http"})
+		if key == b'announce':
+			tracker = value.decode("utf-8")
+
 
 
 print(f"Size: {left}, len: {single_piece_len}\ntot: {left / single_piece_len}")
@@ -102,7 +106,15 @@ info_has = escape(info_hash_sha1)
 #Creation ends here
 
 
-#Print list of trackers
+#if there is no tracker list
+if len(tracker_list) == 0:
+	if tracker[0] == "u":
+		tracker_list.append({"trac": tracker, "type": "udp"})
+	elif tracker[0] == "h":
+		tracker_list.append({"trac": tracker, "type": "http"})
+
+
+#Print list of trackers	
 print("Tracket-List:")
 for t in tracker_list:
 	print(t)
@@ -207,6 +219,9 @@ def connect_to_peer(ip, port):
 	global message1
 	global peer_list
 	global info_hash_sha1
+	global peers_available
+	handshake_completed = False
+	choke = True
 	pres = True
 	client_socket = socket(AF_INET, SOCK_STREAM)
 	#client_socket.settimeout(5.0)
@@ -214,29 +229,64 @@ def connect_to_peer(ip, port):
 		client_socket.connect((ip, int(port)))
 	except:
 		pres = False
+		peer_list.remove({"ip": ip, "port": port})
 	if pres:
 		print(f"Connected to peer {ip}")
+		connect = True
 		client_socket.send(message1)
-		Response = client_socket.recv(4096)
-		Response2 = b''
-		
-		pstrlen = unpack("B", Response[0: 1])[0]
-		nu = 9 + pstrlen
-		info_hash_rep = Response[nu: nu + 20]
-		if len(Response) != 0 and info_hash_rep == info_hash_sha1:
-			print(f"\nFrom: {ip}\nMessage1: {Response}\nLength: {len(Response)}\n")
-			"""
-			Response2 = client_socket.recv(4096)
-			print(f"\nFrom: {ip}\nMessage1: {Response}\nMessage2: {Response2}\nLength: {len(Response)}\n")
-			try:
-				Res = client_socket.recv(4096)
-				print(f"\nFrom: {ip}, Mess: {Res}")
-			except:
-				print(f"Error for {ip}")
-			"""
-		else:
+		try:
+			Response = client_socket.recv(4096)
+		except:
+			connect = False
 			peer_list.remove({"ip": ip, "port": port})
-			
+		if connect:
+			if len(Response) != 0:
+				pstrlen = unpack("B", Response[0: 1])[0]
+				nu = 9 + pstrlen
+				info_hash_rep = Response[nu: nu + 20]
+				if info_hash_rep == info_hash_sha1:
+					#print(f"\nFrom: {ip}\nMessage1: {Response}\nLength: {len(Response)}\n")
+					bitfield = b''
+					handshake_len = pstrlen + 49
+					hand1 = handshake_len
+					if len(Response) == handshake_len:
+						res = client_socket.recv(4096)
+						leng = unpack(">I", res[0: 4])
+						handshake_len += 4 + leng[0]
+						Response = Response + res
+						if len(Response) < handshake_len:
+							res = client_socket.recv(4096)
+							Response = Response + res
+						handshake_completed = True
+						bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
+					elif len(Response) > handshake_len:
+						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
+						handshake_len += 4 + leng[0]
+						if len(Response) < handshake_len:
+							res = client_socket.recv(4096)
+							Response = Response + res
+						bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
+						handshake_completed = True
+					"""
+					if len(Response) > handshake_len:
+						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
+						if leng[0] == 1:
+							id1 = unpack("b", Response[handshake_len: handshake_len + 1])
+							if id1[0] == 1:
+								choke = False
+					"""
+					
+					#print(f"\nFrom: {ip}\nMessage1: {Response}\nLength: {len(Response)}\n")
+					peers_available.append({"ip": ip, "port": port, "bitfield": bitfield, "choke": choke})
+					#peers_available.append({"ip": ip, "port": port, "choke": choke, "Response_len": len(Response), "handshake_len": handshake_len})
+						
+				else:
+					peer_list.remove({"ip": ip, "port": port})		
+				
+			else:
+				peer_list.remove({"ip": ip, "port": port})
+	#if handshake_completed:
+	#	a = 3
 	client_socket.close()
 		
 for peer in peer_list:
@@ -249,9 +299,17 @@ for peer in peer_list:
 for thr in peer_thread_list:
 	thr.join()
 
+"""
 print("Available Peer List")
 for peer in peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}")
+"""
+
+print("Peers with bitpattern")
+for peer in peers_available:
+	for key, val in peer.items():
+		print(f"{key}: {val}")
+	print("\n")
 	
 	
 #Connecting to peers ends here
