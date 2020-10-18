@@ -14,9 +14,10 @@ import hashlib
 
 
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
-path = "./torrent_files/t1.torrent"
-#path = "/home/chetas/Desktop/vidmate_201912_archive.torrent"
+path = "./torrent_files/t2.torrent"
+#path = "/home/chetas/Desktop/t1.torrent"
 #path = "/home/chetas/Desktop/amusementsinmath16713gut_archive.torrent"
+#path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
 # ____________________Part 1: Reading the torrent file____________________
 f = open(path, "rb")
@@ -41,6 +42,7 @@ tracker_list = []
 peers_available = []
 total_pieces = 0
 index_pieces_acquired = []
+file_name = ""
 # Declaration ends here
 
 """
@@ -50,12 +52,13 @@ for key, value in torrent.items():
 		print(f"key: {key}")
 		print("OrderedDict2")
 		for key1, value1 in value.items():
-			if key1 == b'files':
-				print(f"{key1}=>{value1}\n")
+			print(f"{key1}: {value1}")
+			#if key1 == b'files':
+			#	print(f"{key1}=>{value1}\n")
 			#elif key1 == b'pieces':
 			#	print(f"{key1}=>\n\t{value1}")
-			else:
-				print(f"{key1}")
+			#else:
+			#	print(f"{key1}")
 	else:
 		print(f"{key}=>{value}\n")
 #Printing part ends here
@@ -87,6 +90,8 @@ for key, value in torrent.items():
 				#print(left)
 			elif key1 == b'piece length':
 				single_piece_len = value1
+			elif key1 == b'name':
+				file_name = value1.decode("utf-8")
 	else:
 		if key == b'announce-list':
 			for trac in value:
@@ -101,6 +106,7 @@ for key, value in torrent.items():
 			tracker = value.decode("utf-8")
 
 total_pieces = int(left / single_piece_len) + 1
+last_piece_length = left - (total_pieces - 1) * single_piece_len
 print(f"Size: {left}, len: {single_piece_len}\ntot: {total_pieces}")
 
 #creating an info hash for the file				
@@ -200,16 +206,17 @@ for tracker in tracker_list:
 	if tracker["type"] == "http":
 		httpreq = convert_to_http(tracker["trac"], info_has, peer_id, uploaded, downloaded, left, port)
 		t1 = threading.Thread(target=http_tracker_connect, args=(tracker['trac'], httpreq,))
-		tracker_thread_list.append(t1)	
+		tracker_thread_list.append(t1)
+		t1.setDaemon(True)
+		t1.start()	
 	else:
 		t1 = threading.Thread(target=udp_tracker_connect, args=(tracker['trac'],))
 		tracker_thread_list.append(t1)
-
+		t1.setDaemon(True)
+		t1.start()	
 
 for t in tracker_thread_list:
-	t.start()
-for t in tracker_thread_list:
-	t.join()
+	t.join(10)
 #____________________Part 3 ends here____________________
 
 
@@ -230,6 +237,7 @@ def connect_to_peer(ip, port):
 	global peer_list
 	global info_hash_sha1
 	global peers_available
+	global total_pieces
 	bitfield = b''
 	handshake_completed = False # Sees that we get the bitpattern from the remote peer successfully
 	choke = True #Sees if the peer has choked us
@@ -302,7 +310,11 @@ def connect_to_peer(ip, port):
 			handshake_completed = False
 			#To throw away the peer not connecting with us
 	if handshake_completed:
-		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": bitfield})
+		h = bitfield.hex()
+		h = bin(int(h, 16))
+		h = h[2: ]
+		h = h[0: total_pieces]
+		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
 		
 	else:	
 		client_socket.close()
@@ -311,53 +323,90 @@ def connect_to_peer(ip, port):
 for peer in peer_list:
 	ip1 = peer["ip"]
 	port1 = peer["port"]
-	t1 = threading.Thread(target=connect_to_peer, args=(ip1, port1,))
+	t1 = threading.Thread(name='daemon', target=connect_to_peer, args=(ip1, port1,))
 	peer_thread_list.append(t1)
+	t1.setDaemon(True)
 	t1.start()
+	#t1.join(4)
+	
 
 #This loop waits for the connect_to_peers loop to join
 for thr in peer_thread_list:
-	thr.join()
+	thr.join(4)
 
 #____________________Part 4 ends here____________________
 
 
+print("/n requesting begins \n")
 #____________________Part 5: Requesting pieces from available peers____________________
 #function to request pieces
-def request_pieces(peers_available, index_pieces_acquired, single_piece_len):
-	client_socket = peers_available[0]["socket"]
-	j = 13
-	lengt = j.to_bytes(4, "big")
-	j = 6
-	ids = j.to_bytes(1, "big")
-	j = 0
-	ind = j.to_bytes(4, "big")
-	beg = j.to_bytes(4, "big")
-	leng = single_piece_len.to_bytes(4, "big")
-	mess = lengt + ids + ind + beg + leng
-	client_socket.send(mess)
-	expected = single_piece_len + 13
-	res = client_socket.recv(8096)
-	while len(res) < expected:
-		re = client_socket.recv(8096)
-		res = res + re
+def request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length):
+	f = open(file_name, "ab+")
+	client_no = 0
+	pieces_acquisition = 0
+	index_piece = 0
+	piece_size_exceed = False
+	sizes = 16384
 	
-	res = res[13: ]
-	res_hash_val = hashlib.sha1(res).digest()
+	while pieces_acquisition < total_pieces and client_no < len(peers_available):
+		client_socket = peers_available[client_no]["socket"]
+		client_change = False
+		j = 13
+		lengt = j.to_bytes(4, "big")
+		j = 6
+		ids = j.to_bytes(1, "big")
+		offset = 0
+		ind = index_piece.to_bytes(4, "big")
+		beg = offset.to_bytes(4, "big")
+		leng = 0
+		if index_piece == (total_pieces - 1):
+			leng = last_piece_length
+			print(f"Length = {last_piece_length}")
+		else:
+			leng = single_piece_len
+			print(f"Length = {single_piece_len}")
+		block =  sizes
+		fix_len = block.to_bytes(4, "big")
+		#rem = leng % fix_len
+		tot = leng
+		#expected = leng + 13
+		res = b''
+		while offset < leng:
+			expected = block + 13
+			print(f"offset = {offset}")
+			if leng - offset < sizes:
+				last = leng - offset
+				fix_len = last.to_bytes(4, "big")
+				expected = last + 13
+			beg = offset.to_bytes(4, "big")
+			mess = lengt + ids + ind + beg + fix_len
+			client_socket.send(mess)
+			#expected = fix_len + 13
+			try:
+				r = client_socket.recv(8192)
+			except:
+				client_no += 1
+				client_change = True
+				break
+			while len(r) < expected:
+				re = client_socket.recv(8192)
+				r = r + re
+			res += r[13:]
+			offset += block
+		print(f"Message len: {len(res)}")
+		if client_change:
+			continue
+		res_hash_val = hashlib.sha1(res).digest()
+		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
+			f.write(res)
+			pieces_acquisition += 1
+			index_piece += 1
+			offset = 0
+			print(f"Piece {index_piece} with hashval = {res_hash_val} downloaded")
+		else:
+			print(f"Hash values aren't matching")
 	
-	
-	 
-	print(f"\n\nLength of the message is {len(res)}\n\n")
-	
-	print(f"Original val: {index_pieces_acquired[0]['info_hash'].hex()}")
-	print(f"Received val: {res_hash_val.hex()}")
-	
-	if res_hash_val == index_pieces_acquired[0]["info_hash"]:
-		print("The hash values of received piece matches with the original one")
-	
-	#print(f"\n\n\nMessage to be sent: {mess}\nMessage to be received: {res}\n")
-	
-request_pieces(peers_available, index_pieces_acquired, single_piece_len)
+request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length)
 	
 
 #____________________Part 5 ends here____________________
@@ -367,16 +416,16 @@ request_pieces(peers_available, index_pieces_acquired, single_piece_len)
 """
 print("Available Peer List")
 for peer in peer_list:
-	print(f"ip = {peer['ip']}\tport = {peer['port']}")
+	print(f"ip = {peer['ip']}\tport = {peer['port']}\nbitfield: {peer['bitpattern']}")
 """
 
 #print("\nPeers with bitpattern\n")
 for peer in peers_available:
 	cli_soc = peer["socket"]
 	cli_soc.close()
-	#for key, val in peer.items():
-	#	print(f"{key}: {val}")
-	#print("\n")
+	for key, val in peer.items():
+		print(f"{key}: {val}")
+	print("\n")
 
 print("Done")	
 	
