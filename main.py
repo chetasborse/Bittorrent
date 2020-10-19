@@ -14,8 +14,8 @@ import hashlib
 
 
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
-path = "./torrent_files/t2.torrent"
-#path = "/home/chetas/Desktop/t1.torrent"
+path = "./torrent_files/t1.torrent"
+#path = "/home/chetas/Desktop/sample.torrent"
 #path = "/home/chetas/Desktop/amusementsinmath16713gut_archive.torrent"
 #path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
@@ -229,8 +229,9 @@ for peer in peer_list:
 
 #____________________Part 4: Connecting to the peers, handshaking and requesting to unchoke____________________
 peer_thread_list = []
+print(f"\nInfo hash: {info_hash_sha1}\n")
 message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + bytes(8 * chr(0), "utf-8") + info_hash_sha1 + bytes(peer_id, "utf-8"));
-
+print(f"\nHandshake Message: {message1}\n")
 #In this function I have connected to peers -> sent handshake message -> asked to unchoke me -> add them to the list of available peers if they unchoke else close the connection
 def connect_to_peer(ip, port):
 	global message1
@@ -270,9 +271,13 @@ def connect_to_peer(ip, port):
 					if len(Response) == handshake_len:
 						res = client_socket.recv(4096)
 						leng = unpack(">I", res[0: 4])
+						ids1 = unpack("b", res[4: 5])
+						if ids1[0] != 5:
+							res = res[leng[0] + 4:]
+							leng = unpack(">I", res[0: 4])
 						handshake_len += 4 + leng[0]
 						Response = Response + res
-						if len(Response) < handshake_len:
+						while len(Response) < handshake_len:
 							res = client_socket.recv(4096)
 							Response = Response + res
 						handshake_completed = True
@@ -280,19 +285,18 @@ def connect_to_peer(ip, port):
 					elif len(Response) > handshake_len:
 						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
 						handshake_len += 4 + leng[0]
-						if len(Response) < handshake_len:
+						while len(Response) < handshake_len:
 							res = client_socket.recv(4096)
 							Response = Response + res
 						bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
 						handshake_completed = True
-					
 					if len(Response) > handshake_len:
 						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
 						if leng[0] == 1:
 							id1 = unpack("b", Response[handshake_len: handshake_len + 1])
 							if id1[0] == 1:
 								choke = False
-					
+			
 	if handshake_completed and choke:
 		message = b''
 		j = 1
@@ -309,12 +313,20 @@ def connect_to_peer(ip, port):
 		except:
 			handshake_completed = False
 			#To throw away the peer not connecting with us
+	
 	if handshake_completed:
 		h = bitfield.hex()
 		h = bin(int(h, 16))
 		h = h[2: ]
-		h = h[0: total_pieces]
-		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
+		if len(h) > total_pieces:
+			h = h[0: total_pieces]
+			peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
+		elif len(h) < total_pieces:
+			needed = total_pieces - len(h)
+			pref = "0" * needed
+			h = pref + h
+		#print(f"\nip: {ip}\nbitpattern: {h}\nlen: {len(h)}\n")
+		#peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
 		
 	else:	
 		client_socket.close()
@@ -341,13 +353,16 @@ print("/n requesting begins \n")
 #____________________Part 5: Requesting pieces from available peers____________________
 #function to request pieces
 def request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length):
+	if len(file_name) == 0:
+		file_name = "temperory.txt"
 	f = open(file_name, "ab+")
 	client_no = 0
 	pieces_acquisition = 0
 	index_piece = 0
 	piece_size_exceed = False
+	piece_array = []
 	sizes = 16384
-	
+	#Remember to send keep alive messages
 	while pieces_acquisition < total_pieces and client_no < len(peers_available):
 		client_socket = peers_available[client_no]["socket"]
 		client_change = False
@@ -384,6 +399,12 @@ def request_pieces(peers_available, index_pieces_acquired, single_piece_len, tot
 			#expected = fix_len + 13
 			try:
 				r = client_socket.recv(8192)
+				#print(f"Message received: {r}\n")
+				if len(r) == 0:
+					client_no += 1
+					print("Client changed")
+					client_change = True
+					break
 			except:
 				client_no += 1
 				client_change = True
@@ -398,6 +419,7 @@ def request_pieces(peers_available, index_pieces_acquired, single_piece_len, tot
 			continue
 		res_hash_val = hashlib.sha1(res).digest()
 		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
+			pieces_array.append(res)
 			f.write(res)
 			pieces_acquisition += 1
 			index_piece += 1
@@ -419,15 +441,18 @@ for peer in peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}\nbitfield: {peer['bitpattern']}")
 """
 
+
 #print("\nPeers with bitpattern\n")
 for peer in peers_available:
 	cli_soc = peer["socket"]
 	cli_soc.close()
-	for key, val in peer.items():
-		print(f"{key}: {val}")
+	#for key, val in peer.items():
+	#	print(f"{key}: {val}")
+	print(f"ip: {peer['ip']}\nport: {peer['port']}\nlen: {len(peer['bitpattern'])}\n res: {peer['res']}")
 	print("\n")
 
 print("Done")	
+
 	
 #Connecting to peers ends here
 

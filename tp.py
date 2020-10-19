@@ -16,7 +16,7 @@ import hashlib
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
 #path = "./torrent_files/111803045.torrent"
 #path = "/home/chetas/Desktop/111803045.torrent"
-path = "/home/chetas/Desktop/bencoding.py.torrent"
+path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
 # ____________________Part 1: Reading the torrent file____________________
 f = open(path, "rb")
