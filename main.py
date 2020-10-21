@@ -8,6 +8,7 @@ import random
 from struct import *
 import threading
 from subprocess import STDOUT, check_output
+import time
 
 #to convert into hash values
 import hashlib
@@ -320,14 +321,11 @@ def connect_to_peer(ip, port):
 		h = h[2: ]
 		if len(h) > total_pieces:
 			h = h[0: total_pieces]
-			peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
 		elif len(h) < total_pieces:
 			needed = total_pieces - len(h)
 			pref = "0" * needed
 			h = pref + h
-		#print(f"\nip: {ip}\nbitpattern: {h}\nlen: {len(h)}\n")
-		#peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h})
-		
+		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h, "count": h.count("1")})
 	else:	
 		client_socket.close()
 
@@ -339,18 +337,176 @@ for peer in peer_list:
 	peer_thread_list.append(t1)
 	t1.setDaemon(True)
 	t1.start()
-	#t1.join(4)
-	
 
 #This loop waits for the connect_to_peers loop to join
 for thr in peer_thread_list:
 	thr.join(4)
 
+#Sort the peers based on number of pieces they posses based for top 4 algorithm
+def sor(peer):
+	return peer['count']
+peers_available.sort(key=sor)
 #____________________Part 4 ends here____________________
 
 
-print("/n requesting begins \n")
+print("\n Requesting begins \n")
+
 #____________________Part 5: Requesting pieces from available peers____________________
+
+
+if not is_file: #This function called when it is a multiple file system
+	file_name = "temporary.txt"
+f = open(file_name, "ab+")
+pieces_acquisition = 0 #Pieces acquired at any given instant of time
+sizes = 16384 #Block size in which the pieces need to be requested
+#index_pieces_acquired = [0] * total_pieces #Stores currently available pieces. 1 being present and 0 being not acquired yet
+top4_peer_list = [] #Contains top 4 peers at any random time
+
+
+###Functions for Part 5
+#Acquire top 4 peers	
+def keep_alive_thread():
+	global peer_no, peers_available
+	start_peer_from = peer_no
+	end_peer = len(peers_available)
+	j = 0
+	mess = j.to_bytes(1, "big")
+	while peer_no != end_peer:
+		start = peer_no
+		for i in range(start, end_peer):
+			soc = peers_available[i]["socket"]
+			soc.send(mess)
+		time.sleep(100)		
+	print("Keep alive thread ends here")
+	
+def make_queues_for_top4(num_of_peers):
+	top4_queue = []
+	for i in range(0, num_of_peers):
+		top4_queue.append([])
+	return top4_queue
+	
+def download_pieces(peer, pos):
+	global top4_queue
+	global request_queue
+	global index_pieces_acquired
+	global last_piece_len
+	global sizes
+	global pieces_acquisition, total_pieces
+	client_socket = peer["socket"]
+	while pieces_acquisition < total_pieces:
+		#if len(top4_queue[0]) == 0:
+		#	continue
+		if len(request_queue) == 0:
+			continue
+		j = 13
+		lengt = j.to_bytes(4, "big")
+		j = 6
+		ids = j.to_bytes(1, "big")
+		offset = 0
+		#index_piece = top4_queue[0].pop(0)
+		index_piece = request_queue.pop(0)
+		ind = index_piece.to_bytes(4, "big")
+		beg = offset.to_bytes(4, "big")
+		leng = 0
+		if index_piece == (total_pieces - 1):
+			leng = last_piece_length
+			#print(f"Length = {last_piece_length}")
+		else:
+			leng = single_piece_len
+			#print(f"Length = {single_piece_len}")
+		block =  sizes
+		fix_len = block.to_bytes(4, "big")
+		#rem = leng % fix_len
+		tot = leng
+		#expected = leng + 13
+		res = b''
+		while offset < leng:
+			expected = block + 13
+			#print(f"offset = {offset}")
+			if leng - offset < sizes:
+				last = leng - offset
+				fix_len = last.to_bytes(4, "big")
+				expected = last + 13
+			beg = offset.to_bytes(4, "big")
+			mess = lengt + ids + ind + beg + fix_len
+			client_socket.send(mess)
+			#expected = fix_len + 13
+			try:
+				r = client_socket.recv(8192)
+				#print(f"Message received: {r}\n")
+				if len(r) == 0:
+					client_no += 1
+					print("Client changed")
+					#client_change = True
+					break
+			except:
+				client_no += 1
+				#client_change = True
+				break
+			while len(r) < expected:
+				re = client_socket.recv(8192)
+				r = r + re
+			res += r[13:]
+			offset += block
+		print(f"Message len: {len(res)}")
+		#if client_change:
+			#continue
+			#break
+		res_hash_val = hashlib.sha1(res).digest()
+		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
+			#piece_array.append(res)
+			index_pieces_acquired[index_piece]["acquired"] = True
+			#f.write(res)
+			
+			#index_piece += 1
+			offset = 0
+			print(f"Piece {index_piece} with hashval = {res_hash_val} downloaded")
+			pieces_acquisition += 1
+		else:
+			print(f"Hash values aren't matching")
+
+def set_top_4():
+	global top4_peer_list, peer_no, peers_available
+	top4_pos = 0
+	while len(top4_peer_list) < 4 and peer_no < len(peers_available):
+		#t = threading.Thread(target = download_pieces, args=(peers_available[peer_no],))
+		#top4_peer_list.append({"thread": t, "peers": peers_available[peer_no]})
+		peers_available[peer_no]["pos"] = top4_pos
+		top4_peer_list.append(peers_available[peer_no])
+		top4_pos += 1
+		peer_no += 1
+			
+###Functions for Part 5 end here
+
+peer_no = 0
+set_top_4()
+keep_alive = threading.Thread(target = keep_alive_thread)
+#top4_queue = make_queues_for_top4(len(top4_peer_list))
+request_queue = []
+
+start_piece_no = 0 #piece from which to start downloading
+#increment_in_pieces = len(top4_peer_list)
+
+for thr in top4_peer_list:
+	t11 = threading.Thread(target = download_pieces, args=(thr, 0))
+	t11.start()
+
+while pieces_acquisition < total_pieces:
+	#if pieces_acquired < 4: #This is starting policy where the first 4 pieces are downloaded randomly 
+	#	for peer in top4_peer_list:
+	
+	#top4_queue[0].append(start_piece_no)
+	#while index_pieces_acquired[start_piece_no]["acquired"] == False:
+	#	time.sleep(2)
+	#start_piece_no += 1
+	#pieces_acquisition += 1
+	for start_piece_no in range(0, total_pieces):
+		request_queue.append(start_piece_no)
+	
+			
+		
+	
+"""
 #function to request pieces
 def request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length):
 	if len(file_name) == 0:
@@ -419,7 +575,7 @@ def request_pieces(peers_available, index_pieces_acquired, single_piece_len, tot
 			continue
 		res_hash_val = hashlib.sha1(res).digest()
 		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
-			pieces_array.append(res)
+			#piece_array.append(res)
 			f.write(res)
 			pieces_acquisition += 1
 			index_piece += 1
@@ -427,12 +583,11 @@ def request_pieces(peers_available, index_pieces_acquired, single_piece_len, tot
 			print(f"Piece {index_piece} with hashval = {res_hash_val} downloaded")
 		else:
 			print(f"Hash values aren't matching")
-	
 request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length)
 	
 
 #____________________Part 5 ends here____________________
-
+"""
 
 
 """
@@ -441,7 +596,7 @@ for peer in peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}\nbitfield: {peer['bitpattern']}")
 """
 
-
+"""
 #print("\nPeers with bitpattern\n")
 for peer in peers_available:
 	cli_soc = peer["socket"]
@@ -452,7 +607,7 @@ for peer in peers_available:
 	print("\n")
 
 print("Done")	
-
+"""
 	
 #Connecting to peers ends here
 
