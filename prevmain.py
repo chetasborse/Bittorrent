@@ -245,6 +245,8 @@ def connect_to_peer(ip, port):
 	choke = True #Sees if the peer has choked us
 	pres = True # Sees if connection to remote peer is successfull
 	client_socket = socket(AF_INET, SOCK_STREAM)
+	tot_len = 0
+	start_time = 0
 	try:
 		client_socket.connect((ip, int(port)))
 	except:
@@ -254,8 +256,10 @@ def connect_to_peer(ip, port):
 		print(f"Connected to peer {ip}")
 		connect = True # Sees if we get a response from peer after connection
 		client_socket.send(message1)
+		start_time = time.time()
 		try:
 			Response = client_socket.recv(4096)
+			tot_len += len(Response)
 		except:
 			connect = False
 			peer_list.remove({"ip": ip, "port": port})
@@ -269,37 +273,38 @@ def connect_to_peer(ip, port):
 					bitfield = b''
 					handshake_len = pstrlen + 49
 					hand1 = handshake_len
-					try:
-						if len(Response) == handshake_len:
-							res = client_socket.recv(4096)
+					if len(Response) == handshake_len:
+						res = client_socket.recv(4096)
+						tot_len += len(res)
+						leng = unpack(">I", res[0: 4])
+						ids1 = unpack("b", res[4: 5])
+						if ids1[0] != 5:
+							res = res[leng[0] + 4:]
 							leng = unpack(">I", res[0: 4])
-							ids1 = unpack("b", res[4: 5])
-							if ids1[0] != 5:
-								res = res[leng[0] + 4:]
-								leng = unpack(">I", res[0: 4])
-							handshake_len += 4 + leng[0]
+						handshake_len += 4 + leng[0]
+						Response = Response + res
+						while len(Response) < handshake_len:
+							res = client_socket.recv(4096)
+							tot_len += len(res)
 							Response = Response + res
-							while len(Response) < handshake_len:
-								res = client_socket.recv(4096)
-								Response = Response + res
-							handshake_completed = True
-							bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
-						elif len(Response) > handshake_len:
-							leng = unpack(">I", Response[handshake_len: handshake_len + 4])
-							handshake_len += 4 + leng[0]
-							while len(Response) < handshake_len:
-								res = client_socket.recv(4096)
-								Response = Response + res
-							bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
-							handshake_completed = True
-						if len(Response) > handshake_len:
-							leng = unpack(">I", Response[handshake_len: handshake_len + 4])
-							if leng[0] == 1:
-								id1 = unpack("b", Response[handshake_len: handshake_len + 1])
-								if id1[0] == 1:
-									choke = False
-					except:
-						handshake_completed = False
+						handshake_completed = True
+						bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
+					elif len(Response) > handshake_len:
+						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
+						handshake_len += 4 + leng[0]
+						while len(Response) < handshake_len:
+							res = client_socket.recv(4096)
+							tot_len += len(res)
+							Response = Response + res
+						bitfield = Response[hand1 + 5: hand1 + leng[0] + 4]
+						handshake_completed = True
+					if len(Response) > handshake_len:
+						leng = unpack(">I", Response[handshake_len: handshake_len + 4])
+						if leng[0] == 1:
+							id1 = unpack("b", Response[handshake_len: handshake_len + 1])
+							if id1[0] == 1:
+								choke = False
+	end_time = time.time()	
 	if handshake_completed and choke:
 		message = b''
 		j = 1
@@ -318,16 +323,19 @@ def connect_to_peer(ip, port):
 			#To throw away the peer not connecting with us
 	
 	if handshake_completed:
+		rate = tot_len/(end_time - start_time)
 		h = bitfield.hex()
 		h = bin(int(h, 16))
 		h = h[2: ]
+		
 		if len(h) > total_pieces:
 			h = h[0: total_pieces]
 		elif len(h) < total_pieces:
 			needed = total_pieces - len(h)
 			pref = "0" * needed
 			h = pref + h
-		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h, "count": h.count("1")})
+		
+		peers_available.append({"ip": ip, "port": port, "choke": choke, "socket" : client_socket, "bitpattern": h, "count": h.count("1"), "rate": rate})
 	else:	
 		client_socket.close()
 
@@ -347,14 +355,13 @@ for thr in peer_thread_list:
 
 #Sort the peers based on number of pieces they posses based for top 4 algorithm
 def sor(peer):
-	return peer['count']
+	return peer['rate']
 peers_available.sort(key=sor, reverse=True)
 #____________________Part 4 ends here____________________
 
 
 print("\n Requesting begins \n")
-
-
+"""
 #____________________Part 5: Requesting pieces from available peers____________________
 
 
@@ -365,7 +372,7 @@ pieces_acquisition = 0 #Pieces acquired at any given instant of time
 sizes = 16384 #Block size in which the pieces need to be requested
 #index_pieces_acquired = [0] * total_pieces #Stores currently available pieces. 1 being present and 0 being not acquired yet
 top4_peer_list = [] #Contains top 4 peers at any random time
-request_queue = []
+
 
 ###Functions for Part 5
 #Acquire top 4 peers	
@@ -389,15 +396,13 @@ def make_queues_for_top4(num_of_peers):
 		top4_queue.append([])
 	return top4_queue
 	
-def download_pieces(lock ,peer, pos):
+def download_pieces(peer, pos):
 	global top4_queue
-	global top4_peer_list
 	global request_queue
 	global index_pieces_acquired
 	global last_piece_len
 	global sizes
 	global pieces_acquisition, total_pieces
-	client_change = False
 	client_socket = peer["socket"]
 	while pieces_acquisition < total_pieces:
 		#if len(top4_queue[0]) == 0:
@@ -410,9 +415,7 @@ def download_pieces(lock ,peer, pos):
 		ids = j.to_bytes(1, "big")
 		offset = 0
 		#index_piece = top4_queue[0].pop(0)
-		lock.acquire()
 		index_piece = request_queue.pop(0)
-		lock.release()
 		ind = index_piece.to_bytes(4, "big")
 		beg = offset.to_bytes(4, "big")
 		leng = 0
@@ -428,7 +431,6 @@ def download_pieces(lock ,peer, pos):
 		tot = leng
 		#expected = leng + 13
 		res = b''
-		test = []
 		while offset < leng:
 			expected = block + 13
 			#print(f"offset = {offset}")
@@ -438,40 +440,29 @@ def download_pieces(lock ,peer, pos):
 				expected = last + 13
 			beg = offset.to_bytes(4, "big")
 			mess = lengt + ids + ind + beg + fix_len
-			try:
-				client_socket.send(mess)
-			except:
-				client_change = True
-				break
+			client_socket.send(mess)
 			#expected = fix_len + 13
 			try:
 				r = client_socket.recv(8192)
-				preff = unpack(">I", r[0: 4])[0]
-				if preff < 9:
-					r = r[preff + 4:]
-				elif preff > 9:
-					preff2 = unpack("B", r[4: 5])[0]
-					if preff2 != 7:
-						r = r[preff + 4: ]
 				#print(f"Message received: {r}\n")
 				if len(r) == 0:
 					client_no += 1
 					print("Client changed")
-					client_change = True
+					#client_change = True
 					break
 			except:
-				client_change = True
+				client_no += 1
+				#client_change = True
 				break
 			while len(r) < expected:
 				re = client_socket.recv(8192)
 				r = r + re
 			res += r[13:]
-			test.append(r)
 			offset += block
-		#print(f"Message len: {len(res)}")
-		if client_change:
+		print(f"Message len: {len(res)}")
+		#if client_change:
 			#continue
-			break
+			#break
 		res_hash_val = hashlib.sha1(res).digest()
 		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
 			#piece_array.append(res)
@@ -480,64 +471,134 @@ def download_pieces(lock ,peer, pos):
 			
 			#index_piece += 1
 			offset = 0
-			print(f"Message len: {len(res)}\nPiece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}\n")
-			#lock.acquire()
+			print(f"Piece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}")
 			pieces_acquisition += 1
-			#lock.release()
 		else:
-			print(f"Message len: {len(res)}\nHash values aren't matching\nMessage: {r}")
-			for b in test:
-				print(f"----->{b[0: 20]}")
-	if client_change:
-		client_socket.close()
-		top4_peer_list.remove(peer) #Remove the peer from top4 if it closes the connection
-	
+			print(f"Hash values aren't matching")
 
 def set_top_4():
-	global top4_peer_list, peer_no, peers_available, pieces_acquisition, total_pieces
+	global top4_peer_list, peer_no, peers_available
 	top4_pos = 0
-	while pieces_acquisition < total_pieces:
-		if len(top4_peer_list) < 4 and peer_no < len(peers_available):
-			while len(top4_peer_list) < 4 and peer_no < len(peers_available):
-				lock = threading.Lock()
-				t = threading.Thread(target = download_pieces, args=(lock, peers_available[peer_no], 0))
-				t.start()
-				#top4_peer_list.append({"thread": t, "peers": peers_available[peer_no]})
-				peers_available[peer_no]["pos"] = top4_pos
-				top4_peer_list.append(peers_available[peer_no])
-				top4_pos += 1
-				peer_no += 1
-		else:
-			time.sleep(10)
+	while len(top4_peer_list) < 4 and peer_no < len(peers_available):
+		#t = threading.Thread(target = download_pieces, args=(peers_available[peer_no],))
+		#top4_peer_list.append({"thread": t, "peers": peers_available[peer_no]})
+		peers_available[peer_no]["pos"] = top4_pos
+		top4_peer_list.append(peers_available[peer_no])
+		top4_pos += 1
+		peer_no += 1
 			
 ###Functions for Part 5 end here
 
 peer_no = 0
-for start_piece_no in range(0, total_pieces):
-	request_queue.append(start_piece_no)
-top4_thread = threading.Thread(target=set_top_4)
-top4_thread.start()
-#set_top_4()
+set_top_4()
 keep_alive = threading.Thread(target = keep_alive_thread)
 #top4_queue = make_queues_for_top4(len(top4_peer_list))
-
+request_queue = []
 
 start_piece_no = 0 #piece from which to start downloading
 #increment_in_pieces = len(top4_peer_list)
 
-#for thr in top4_peer_list:
-#	t11 = threading.Thread(target = download_pieces, args=(thr, 0))
-#	t11.start()
+for thr in top4_peer_list:
+	t11 = threading.Thread(target = download_pieces, args=(thr, 0))
+	t11.start()
 
-#while pieces_acquisition < total_pieces:
-
+while pieces_acquisition < total_pieces:
+	#if pieces_acquired < 4: #This is starting policy where the first 4 pieces are downloaded randomly 
+	#	for peer in top4_peer_list:
 	
-top4_thread.join()
-for i in range(0, total_pieces):
-	print(f"i: {index_pieces_acquired[i]['acquired']}")
+	#top4_queue[0].append(start_piece_no)
+	#while index_pieces_acquired[start_piece_no]["acquired"] == False:
+	#	time.sleep(2)
+	#start_piece_no += 1
+	#pieces_acquisition += 1
+	for start_piece_no in range(0, total_pieces):
+		request_queue.append(start_piece_no)
+"""	
+			
+		
+	
+"""
+#function to request pieces
+def request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length):
+	if len(file_name) == 0:
+		file_name = "temperory.txt"
+	f = open(file_name, "ab+")
+	client_no = 0
+	pieces_acquisition = 0
+	index_piece = 0
+	piece_size_exceed = False
+	piece_array = []
+	sizes = 16384
+	#Remember to send keep alive messages
+	while pieces_acquisition < total_pieces and client_no < len(peers_available):
+		client_socket = peers_available[client_no]["socket"]
+		client_change = False
+		j = 13
+		lengt = j.to_bytes(4, "big")
+		j = 6
+		ids = j.to_bytes(1, "big")
+		offset = 0
+		ind = index_piece.to_bytes(4, "big")
+		beg = offset.to_bytes(4, "big")
+		leng = 0
+		if index_piece == (total_pieces - 1):
+			leng = last_piece_length
+			print(f"Length = {last_piece_length}")
+		else:
+			leng = single_piece_len
+			print(f"Length = {single_piece_len}")
+		block =  sizes
+		fix_len = block.to_bytes(4, "big")
+		#rem = leng % fix_len
+		tot = leng
+		#expected = leng + 13
+		res = b''
+		while offset < leng:
+			expected = block + 13
+			print(f"offset = {offset}")
+			if leng - offset < sizes:
+				last = leng - offset
+				fix_len = last.to_bytes(4, "big")
+				expected = last + 13
+			beg = offset.to_bytes(4, "big")
+			mess = lengt + ids + ind + beg + fix_len
+			client_socket.send(mess)
+			#expected = fix_len + 13
+			try:
+				r = client_socket.recv(8192)
+				#print(f"Message received: {r}\n")
+				if len(r) == 0:
+					client_no += 1
+					print("Client changed")
+					client_change = True
+					break
+			except:
+				client_no += 1
+				client_change = True
+				break
+			while len(r) < expected:
+				re = client_socket.recv(8192)
+				r = r + re
+			res += r[13:]
+			offset += block
+		print(f"Message len: {len(res)}")
+		if client_change:
+			continue
+		res_hash_val = hashlib.sha1(res).digest()
+		if res_hash_val == index_pieces_acquired[index_piece]["info_hash"]:
+			#piece_array.append(res)
+			f.write(res)
+			pieces_acquisition += 1
+			index_piece += 1
+			offset = 0
+			print(f"Piece {index_piece} with hashval = {res_hash_val} downloaded")
+		else:
+			print(f"Hash values aren't matching")
+request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_pieces, file_name, last_piece_length)
+	
 
 #____________________Part 5 ends here____________________
-
+"""
 
 
 """
@@ -546,8 +607,8 @@ for peer in peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}\nbitfield: {peer['bitpattern']}")
 """
 
-"""
-print("\nPeers with bitpattern\n")
+
+#print("\nPeers with bitpattern\n")
 for peer in peers_available:
 	cli_soc = peer["socket"]
 	cli_soc.close()
@@ -555,7 +616,7 @@ for peer in peers_available:
 		print(f"{key}: {val}")
 	#print(f"ip: {peer['ip']}\nport: {peer['port']}\nlen: {len(peer['bitpattern'])}\n rate: {peer['rate']}")
 	print("\n")
-"""
+
 print("Done")	
 
 	
