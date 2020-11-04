@@ -1,2 +1,0 @@
-1) Currently talking to only one tracker. Nantar loop thru the trackers' list pn karaychay.
-2) Currently communicating with trackers supporting http and https. UDP jamla tar add karaychay.
