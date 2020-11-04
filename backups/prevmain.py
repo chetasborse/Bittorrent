@@ -361,7 +361,7 @@ peers_available.sort(key=sor, reverse=True)
 
 
 print("\n Requesting begins \n")
-"""
+
 #____________________Part 5: Requesting pieces from available peers____________________
 
 
@@ -598,7 +598,7 @@ request_pieces(peers_available, index_pieces_acquired, single_piece_len, total_p
 	
 
 #____________________Part 5 ends here____________________
-"""
+
 
 
 """
