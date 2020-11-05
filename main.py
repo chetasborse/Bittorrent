@@ -9,21 +9,19 @@ from struct import *
 import threading
 from subprocess import STDOUT, check_output
 import time
-
-
 from config import *
 import config
 from print_tor import print_torr
-from tracker_contact import http_tracker_connect, udp_tracker_connect
+from tracker_contact import http_tracker_connect, udp_tracker_connect, get_the_peers
 from peers_contact import connect_to_peer
-
-
+from download_pieces import download_pieces, keep_alive_thread
+from write import write_to_file
 #to convert into hash values
 import hashlib
 
 
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
-path = "./torrent_files/t1.torrent"
+path = "./torrent_files/trial.torrent"
 #path = "/home/chetas/Desktop/sample.torrent"
 #path = "/home/chetas/Desktop/amusementsinmath16713gut_archive.torrent"
 #path = "/home/chetas/Desktop/big-buck-bunny.torrent"
@@ -51,7 +49,7 @@ for key, value in torrent.items():
 					config.index_pieces_acquired.append({"info_hash": hashval, "acquired": False})
 					#print(hashval)
 			elif key1 == b'files':
-				is_file = False
+				config.is_file = False
 				for lis in value1:
 					for k, v in lis.items():
 						if k == b'length':
@@ -62,7 +60,7 @@ for key, value in torrent.items():
 			elif key1 == b'piece length':
 				config.single_piece_len = value1
 			elif key1 == b'name':
-				file_name = value1.decode("utf-8")
+				config.file_name = value1.decode("utf-8")
 	else:
 		if key == b'announce-list':
 			for trac in value:
@@ -77,7 +75,7 @@ for key, value in torrent.items():
 			tracker = value.decode("utf-8")
 
 config.total_pieces = int(config.left / config.single_piece_len) + 1
-last_piece_length = config.left - (config.total_pieces - 1) * config.single_piece_len
+config.last_piece_len = config.left - (config.total_pieces - 1) * config.single_piece_len
 print(f"Size: {config.left}, len: {config.single_piece_len}\ntot: {config.total_pieces}")
 
 #creating an info hash for the file				
@@ -106,27 +104,7 @@ for t in config.tracker_list:
 
 #____________________Part 3: Http/ UDP request to the tracker is made here and list of peers is obtained____________________
 
-tracker_thread_list = []
-tracker_pos = 0 #Tells the point index of tracker which was requested
-tracker_end = tracker_pos + 4 #Tells maximum how many trackers should be requested at a time
-for tracker in config.tracker_list:
-	if tracker["type"] == "http":
-		httpreq = convert_to_http(tracker["trac"], info_has, peer_id, config.uploaded, config.downloaded, config.left, port)
-		t1 = threading.Thread(target=http_tracker_connect, args=(tracker['trac'], httpreq, info_hash_sha1,))
-		tracker_thread_list.append(t1)
-		t1.setDaemon(True)
-		t1.start()	
-	else:
-		t1 = threading.Thread(name="daemon", target=udp_tracker_connect, args=(tracker['trac'], info_hash_sha1,))
-		tracker_thread_list.append(t1)
-		t1.setDaemon(True)
-		t1.start()
-	tracker_pos += 1
-	if tracker_pos == tracker_end:
-		break	
-
-for t in tracker_thread_list:
-	t.join(4)
+get_the_peers(info_has, peer_id, port, info_hash_sha1)
 #____________________Part 3 ends here____________________
 
 
@@ -137,11 +115,9 @@ for peer in config.peer_list:
 #Printing peers ends here
 
 
-#____________________Part 4: Connecting to the peers, handshaking and requesting to unchoke____________________
+#____________________Part 4: Connecting to the peers, handshaking____________________
 peer_thread_list = []
-# print(f"\nInfo hash: {info_hash_sha1}\n")
 message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + bytes(8 * chr(0), "utf-8") + info_hash_sha1 + bytes(peer_id, "utf-8"));
-# print(f"\nHandshake Message: {message1}\n")
 
 #This loop starts connect to peers thread		
 for peer in config.peer_list:
@@ -176,306 +152,51 @@ if len(peers_available) == 0:
 #____________________Part 5: Requesting pieces from available peers____________________
 
 
-if not is_file: #This function called when it is a multiple file system
-	file_name = "temporary.txt"
-f = open(file_name, "wb+")
-
-sizes = 16384 #Block size in which the pieces need to be requested
 config.index_pieces_acq = [0] * config.total_pieces #Stores currently available pieces. 1 being present and 0 being not acquired yet
 print(f"\nindex_pieces_acquired = {config.index_pieces_acq}\n")
-###Functions for Part 5
-#Acquire top 4 peers	
-def keep_alive_thread():
-	global peer_no
-	start_peer_from = peer_no
-	end_peer = len(config.peers_available)
-	j = 0
-	mess = j.to_bytes(1, "big")
-	while peer_no != end_peer:
-		start = peer_no
-		for i in range(start, end_peer):
-			soc = config.peers_available[i]["socket"]
-			soc.send(mess)
-		time.sleep(100)		
-	print("Keep alive thread ends here")
-	
-def make_queues_for_top4(num_of_peers):
-	top4_queue = []
-	for i in range(0, num_of_peers):
-		top4_queue.append([])
-	return top4_queue
-	
-def download_pieces(lock ,peer, pos):
-	global top4_queue
-	global f
-	global top4_peer_list
-	global request_queue
-	global last_piece_len
-	global sizes
-	global pieces_acquisition
-	choked = True
-	client_change = False
-	client_socket = peer["socket"]
-	if peer["choke"] == True:
-		j = 1
-		leng = j.to_bytes(4, "big")
-		j = 2
-		interested = j.to_bytes(1, "big")
-		message = leng + interested
-		client_socket.send(message)
-		try:
-			Response = client_socket.recv(1024)
-			# endpoint = 0
-			# have_pieces = [] 
-			# while end_point < len(Response): #This checks the have messages
-			# 	leng = unpack(">I", Response[end_point: end_point + 4])[0]
-			# 	if end_point + leng + 4 > len(Response):
-			# 		try:
-			# 			res = client_socket.recv(4096)
-			# 			Response += res
-			# 		except:
-			# 			break	
-			# 	id = unpack("b", Response[end_point + 4: end_point + 5])[0]
-			# 	if id != 4:
-			# 		break
-			# 	piece = unpack(">I", Response[end_point + 5: end_point + 9])[0]
-			# 	have_pieces.append(piece)
-			# 	end_point = end_point + 9
-			
-			# if len(have_pieces) != 0:
-			# 	print(f"Have pieces: {have_pieces}\n")
-			# 	h = peer["bitpattern"]
-			# 	while len(have_pieces) > 0:
-			# 		ind = have_pieces.pop(0)
-			# 		part1 = h[0: ind]
-			# 		part2 = h[ind + 1: len(h)]
-			# 		h = part1 + "1" + part2
-			# 	peer["bitpattern"] = h
-				
-			print(f"\nMessage on interested: {Response}\n")
-			if Response == b'\x00\x00\x00\x01\x01':
-				peer["choke"] = False
-				choked = False
-		except:
-			pass
-	else:
-		choked = False
-	if choked == False: 
-		while True:
-			#if len(top4_queue[0]) == 0:
-			#	continue
-			if len(request_queue) == 0:
-				continue
-			j = 13
-			lengt = j.to_bytes(4, "big")
-			j = 6
-			ids = j.to_bytes(1, "big")
-			offset = 0
-			#index_piece = top4_queue[0].pop(0)
-			lock.acquire()
-			index_piece = -1
-			#index_piece = request_queue.pop(0)
-			for num in request_queue:
-				if peer["bitpattern"][num] == "1":
-					index_piece = num
-					request_queue.remove(num)
-					break
-			lock.release()
-			if index_piece == -1:
-				client_change = True
-				break
-			#print(f"Packet no. {index_piece} started")
-			ind = index_piece.to_bytes(4, "big")
-			beg = offset.to_bytes(4, "big")
-			leng = 0
-			if index_piece == (config.total_pieces - 1):
-				leng = last_piece_length
-				#print(f"Length = {last_piece_length}")
-			else:
-				leng = config.single_piece_len
-				#print(f"Length = {config.single_piece_len}")
-			block =  sizes
-			fix_len = block.to_bytes(4, "big")
-			#rem = leng % fix_len
-			tot = leng
-			#expected = leng + 13
-			res = b''
-			test = []
-			while offset < leng:
-				expected = block + 13
-				#print(f"offset = {offset}")
-				if leng - offset < sizes:
-					last = leng - offset
-					fix_len = last.to_bytes(4, "big")
-					expected = last + 13
-				beg = offset.to_bytes(4, "big")
-				mess = lengt + ids + ind + beg + fix_len
-				try:
-					client_socket.send(mess)
-				except:
-					client_change = True
-					break
-				#expected = fix_len + 13
-				try:
-					r = client_socket.recv(8192)
-					preff = unpack(">I", r[0: 4])[0]
-					while len(r) > 0:
-						idd = unpack("B", r[4: 5])[0]
-						if preff == 0:
-							r = r[preff + 4:]
-							preff = unpack(">I", r[0: 4])[0]				
-						elif idd == 7:
-							break
-						else:
-							r = r[preff + 5:]
-							preff = unpack(">I", r[0: 4])[0]
-						"""	
-						if preff < 9:
-							r = r[preff + 4:]
-							preff = unpack(">I", r[0: 4])[0]
-						elif preff > 9:
-							preff2 = unpack("B", r[4: 5])[0]
-							if preff2 != 7:
-								r = r[preff + 4: ]
-							preff = unpack(">I", r[0: 4])[0]
-						"""
-							
-					#print(f"Message received: {r}\n")
-					if len(r) == 0:
-						client_no += 1
-						print("Client changed")
-						client_change = True
-						break
-				except:
-					client_change = True
-					break
-				while len(r) < expected:
-					re = client_socket.recv(8192)
-					r = r + re
-				res += r[13: preff + 4]
-				test.append(r)
-				offset += block
-			#print(f"Message len: {len(res)}")
-			if client_change:
-				#continue
-				lock.acquire()
-				request_queue.insert(0, num)
-				lock.release()
-				break
-			res_hash_val = hashlib.sha1(res).digest()
-			if res_hash_val == config.index_pieces_acquired[index_piece]["info_hash"]:
-				#piece_array.append(res)
-				#f.write(res)
-				
-				#index_piece += 1
-				offset = 0
-				print(f"Message len: {len(res)}\nPiece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}\n")
-				lock.acquire()
-				config.index_pieces_acquired[index_piece]["acquired"] = True
-				print(f"index_piece: {index_piece}")
-				config.index_pieces_acq[index_piece] = 1
-				temp_list = config.index_pieces_acq[0 : index_piece]
-				coun = temp_list.count(1)
-				total_offset = coun * single_piece_len
-				f.seek(total_offset, 0)
-				rem_piece = f.read()
-				f.seek(total_offset, 0)
-				f.write(res)
-				f.write(rem_piece)
-				pieces_acquisition += 1
-				#Code for writing to the file
-				#Code ends here
-				lock.release()
-			else:
-				print(f"Message len: {len(res)}\nHash values aren't matching\nMessage: {r}")
-				for b in test:
-					print(f"----->{b[0: 20]}")
-				lock.acquire()
-				request_queue.insert(0, num)
-				lock.release()
-	else:
-		client_change = True
 
 
-	if client_change:
-		client_socket.close()
-		lock.acquire()
-		for i in range(len(top4_peer_list)):
-			if top4_peer_list[i]['ip'] == peer["ip"] and top4_peer_list[i]['port'] == peer["port"]: #Remove the peer from top4 if it closes the connection
-				del top4_peer_list[i]
-				break
-		lock.release()
-	
-
-def set_top_4():
-	global top4_peer_list, peer_no, pieces_acquisition
-	top4_pos = 0
-	while pieces_acquisition < config.total_pieces:
-		if len(top4_peer_list) < 4 and peer_no < len(config.peers_available):
-			while len(top4_peer_list) < 4 and peer_no < len(config.peers_available):
-				lock = threading.Lock()
-				t = threading.Thread(target = download_pieces, args=(lock, config.peers_available[peer_no], 0))
-				t.start()
-				#top4_peer_list.append({"thread": t, "peers": config.peers_available[peer_no]})
-				#config.peers_available[peer_no]["pos"] = top4_pos
-				top4_peer_list.append(config.peers_available[peer_no])
-				top4_pos += 1
-				peer_no += 1
-		else:
-			if peer_no >= len(config.peers_available):
-				print("Peers depleted")
-				break
-			time.sleep(10)
-			
-###Functions for Part 5 end here
-
-peer_no = 0
 for start_piece_no in range(0, config.total_pieces):
-	request_queue.append(start_piece_no)
+	config.request_queue.append(start_piece_no)
 
-print(request_queue)
-	
-##top4_thread = threading.Thread(target=set_top_4)
-##top4_thread.start()
+print(config.request_queue)
 
-#Only demo delete later
+
 top4_pos = 0
-while pieces_acquisition < config.total_pieces:
-	if len(top4_peer_list) < 4 and peer_no < len(config.peers_available):
-		while len(top4_peer_list) < 4 and peer_no < len(config.peers_available):
-			lock = threading.Lock()
-			top4_peer_list.append(config.peers_available[peer_no])
-			t = threading.Thread(target = download_pieces, args=(lock, config.peers_available[peer_no], 0))
-			t.start()
-			#top4_peer_list.append({"thread": t, "peers": config.peers_available[peer_no]})
-			#config.peers_available[peer_no]["pos"] = top4_pos
-			top4_pos += 1
-			print(f"\nPeer number is {peer_no}\n")
-			peer_no += 1
-	else:
-		if pieces_acquisition == config.total_pieces:
-			print("Peers depleted")
-			break
-		time.sleep(10)
-
-#demo ends here
-
-#set_top_4()
-keep_alive = threading.Thread(target = keep_alive_thread)
-#top4_queue = make_queues_for_top4(len(top4_peer_list))
-
-
-start_piece_no = 0 #piece from which to start downloading
-#increment_in_pieces = len(top4_peer_list)
-
-#for thr in top4_peer_list:
-#	t11 = threading.Thread(target = download_pieces, args=(thr, 0))
-#	t11.start()
-
-#while pieces_acquisition < config.total_pieces:
+download_complete = False
+keep_alive_thread_started = False
+peer_deplete = False
+while True:
+	while len(config.top4_peer_list) < 4 and config.peer_no < len(config.peers_available):
+		lock = threading.Lock()
+		config.top4_peer_list.append(config.peers_available[config.peer_no])
+		t = threading.Thread(target = download_pieces, args=(lock, config.peers_available[config.peer_no],))
+		t.setDaemon(True)
+		t.start()
+		#top4_peer_list.append({"thread": t, "peers": config.peers_available[peer_no]})
+		#config.peers_available[peer_no]["pos"] = top4_pos
+		top4_pos += 1
+		print(f"\nPeer number is {config.peer_no}\n")
+		config.peer_no += 1
+	if config.pieces_acquisition == config.total_pieces:
+		print("Peers depleted")
+		download_complete = True
+		break
+	# if config.peer_no + 1 == len(config.peers_available):
+	# 		peer_deplete = True
+	# 		break
+	if keep_alive_thread_started == False:
+		keep_alive_thread_started = True
+		keep_alive = threading.Thread(target = keep_alive_thread)
+		lock = threading.Lock()
+		write_fil = threading.Thread(target = write_to_file, args = (lock,))
+		write_fil.setDaemon("True")
+		keep_alive.setDaemon("True")
+		write_fil.start()
+		keep_alive.start()
+	time.sleep(5)
 
 	
-##top4_thread.join()
 for i in range(0, config.total_pieces):
 	print(f"{i}: {config.index_pieces_acquired[i]['acquired']}")
 
