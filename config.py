@@ -2,6 +2,8 @@
 from Tracker import make_peer_id
 
 tracker = ""
+download_path = ''
+folder_dets = [] #Details of folder if the torrent is multi file
 hash_code_list = []
 uploaded = 0
 downloaded = 0
@@ -19,6 +21,7 @@ total_pieces = 0
 index_pieces_acquired = []
 file_name = ""
 pieces_acquisition = 0 #Pieces acquired at any given instant of time
+pieces_written = 0
 index_pieces_acq = []
 top4_peer_list = [] #Contains top 4 peers at any random time
 request_queue = []
@@ -29,3 +32,4 @@ top4_peer_list = []
 request_queue = []
 write_buffer = []
 file_name = ''
+f = ''

@@ -15,24 +15,39 @@ from print_tor import print_torr
 from tracker_contact import http_tracker_connect, udp_tracker_connect, get_the_peers
 from peers_contact import connect_to_peer
 from download_pieces import download_pieces, keep_alive_thread
-from write import write_to_file
+from write import write_to_file, write_to_multifile
 #to convert into hash values
 import hashlib
+import os
 
 
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
-path = "./torrent_files/trial.torrent"
-#path = "/home/chetas/Desktop/sample.torrent"
-#path = "/home/chetas/Desktop/amusementsinmath16713gut_archive.torrent"
+#path = "./torrent_files/t1.torrent"
+
+path = "/home/chetas/Desktop/Hyouka.torrent"
+#path = "/home/chetas/Desktop/[KiruaSubs] Yesterday wo Utatte - Extra 06.ass.torrent"
 #path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
 # ____________________Part 1: Reading the torrent file____________________
+
 f = open(path, "rb")
 metainfo = f.read()
 torrent, pos = decode(metainfo, 0)
+
+#Creates downloads folder if not present
+directory = "Downloads"
+cwd = os.getcwd()
+path = os.path.join(cwd, directory)
+try:
+	os.mkdir(path)
+except FileExistsError:
+	pass
+
+config.download_path = path
 # ____________________Part 1 ends here____________________
 
-		
+
+	
 # ____________________Part 2: Converting the .torrent file into normal strings and storing the important values____________________		
 for key, value in torrent.items():
 	if type(value) == OrderedDict:
@@ -51,9 +66,18 @@ for key, value in torrent.items():
 			elif key1 == b'files':
 				config.is_file = False
 				for lis in value1:
+					fold = dict()
 					for k, v in lis.items():
 						if k == b'length':
+							fold["length"] = int(v)
 							config.left = config.left + int(v)
+						if k == b'path':
+							fold["file_name"] = v[len(v) - 1].decode("utf-8")
+							p = ''
+							for i in range(len(v) - 1):
+								p += f'/{v[i].decode("utf-8")}'
+							fold["path"] = p
+					config.folder_dets.append(fold)
 			elif key1 == b'length':
 				config.left = int(value1)
 				#print(config.left)
@@ -83,6 +107,7 @@ info_hash_bencode = encode(info_hash)
 info_hash_sha1 = hashlib.sha1(info_hash_bencode).digest()
 info_has = escape(info_hash_sha1)
 #Creation ends here
+		
 
 
 #if there is no tracker list
@@ -179,7 +204,7 @@ while True:
 		print(f"\nPeer number is {config.peer_no}\n")
 		config.peer_no += 1
 	if config.pieces_acquisition == config.total_pieces:
-		print("Peers depleted")
+		print("Download complete")
 		download_complete = True
 		break
 	# if config.peer_no + 1 == len(config.peers_available):
@@ -199,6 +224,10 @@ while True:
 	
 for i in range(0, config.total_pieces):
 	print(f"{i}: {config.index_pieces_acquired[i]['acquired']}")
+
+
+if not config.is_file:
+	write_to_multifile()
 
 #____________________Part 5 ends here____________________
 
