@@ -14,7 +14,7 @@ import config
 from print_tor import print_torr
 from tracker_contact import http_tracker_connect, udp_tracker_connect, get_the_peers
 from peers_contact import connect_to_peer
-from download_pieces import download_pieces, keep_alive_thread
+from download_pieces import download_pieces, keep_alive_thread, set_rarest_first
 from write import write_to_file, write_to_multifile
 #to convert into hash values
 import hashlib
@@ -22,13 +22,13 @@ import os
 
 
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
-#path = "./torrent_files/t1.torrent"
+path = "./torrent_files/t1.torrent"
 
-path = "/home/chetas/Desktop/Hyouka.torrent"
+#path = "/home/chetas/Desktop/t3.torrent"
 #path = "/home/chetas/Desktop/[KiruaSubs] Yesterday wo Utatte - Extra 06.ass.torrent"
 #path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
-# ____________________Part 1: Reading the torrent file____________________
+# ____________________Part 1: Reading the torrent file and create Downloads folder____________________
 
 f = open(path, "rb")
 metainfo = f.read()
@@ -101,16 +101,23 @@ for key, value in torrent.items():
 config.total_pieces = int(config.left / config.single_piece_len) + 1
 config.last_piece_len = config.left - (config.total_pieces - 1) * config.single_piece_len
 print(f"Size: {config.left}, len: {config.single_piece_len}\ntot: {config.total_pieces}")
+# config.file_size = (config.total_pieces - 1) * config.single_piece_len + config.last_piece_len
+config.file_size = config.total_pieces * config.single_piece_len
 
 #creating an info hash for the file				
 info_hash_bencode = encode(info_hash)
 info_hash_sha1 = hashlib.sha1(info_hash_bencode).digest()
 info_has = escape(info_hash_sha1)
 #Creation ends here
-		
+config.global_tracker_list = config.tracker_list		
+
+#____________________Part 2 ends here____________________
 
 
-#if there is no tracker list
+#____________________Part 3: Http/ UDP request to the tracker is made here and list of peers is obtained____________________
+
+
+#if there is no tracker list then use the tracker mentioned in announce
 if len(config.tracker_list) == 0:
 	if tracker[0] == "u":
 		config.tracker_list.append({"trac": tracker, "type": "udp"})
@@ -123,11 +130,6 @@ print("Tracket-List:")
 for t in config.tracker_list:
 	print(t)
 #Printing trackers ends here
-
-#____________________Part 2 ends here____________________
-
-
-#____________________Part 3: Http/ UDP request to the tracker is made here and list of peers is obtained____________________
 
 get_the_peers(info_has, peer_id, port, info_hash_sha1)
 #____________________Part 3 ends here____________________
@@ -143,7 +145,7 @@ for peer in config.peer_list:
 #____________________Part 4: Connecting to the peers, handshaking____________________
 peer_thread_list = []
 message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + bytes(8 * chr(0), "utf-8") + info_hash_sha1 + bytes(peer_id, "utf-8"));
-
+config.peers_available = []
 #This loop starts connect to peers thread		
 for peer in config.peer_list:
 	ip1 = peer["ip"]
@@ -159,7 +161,7 @@ for thr in peer_thread_list:
 	thr.join(4)
 
 
-#Sort the peers based on their rate of data transfer
+#Sort the peers based on their rate of data transfer for top4
 def sor(peer):
 	return peer['rate']
 config.peers_available.sort(key=sor)
@@ -169,47 +171,76 @@ config.peers_available.sort(key=sor)
 print("\n Requesting begins \n")
 print(f"Available peers: {len(config.peers_available)}\n")
 
-if len(peers_available) == 0:
+if len(config.peers_available) == 0:
 	print("\nNo peers found\n")
 	sys.exit()
 
+set_rarest_first()
 
-#____________________Part 5: Requesting pieces from available peers____________________
+#____________________Part 5: Requesting pieces from available peers with top 4 at a time based on rate of download____________________
 
 
 config.index_pieces_acq = [0] * config.total_pieces #Stores currently available pieces. 1 being present and 0 being not acquired yet
-print(f"\nindex_pieces_acquired = {config.index_pieces_acq}\n")
-
-
-for start_piece_no in range(0, config.total_pieces):
-	config.request_queue.append(start_piece_no)
-
-print(config.request_queue)
-
 
 top4_pos = 0
 download_complete = False
 keep_alive_thread_started = False
 peer_deplete = False
+
 while True:
-	while len(config.top4_peer_list) < 4 and config.peer_no < len(config.peers_available):
+
+	if len(config.top4_peer_list) == 0 and config.peer_no == len(config.peers_available): #This part requests for more peers if peers get depleted
+		print("Connecting to trackers again\n")
+		status = get_the_peers(info_has, peer_id, port, info_hash_sha1)
+		if not status:
+			try: #Here connection to the tracket is made again if the peers provided by all the trackers deplete
+				print("\nContact to trackers made again\n")
+				peer_id = make_peer_id()
+				config.tracker_list = config.global_tracker_list
+				if len(config.tracker_list) == 0:
+					if tracker[0] == "u":
+						config.tracker_list.append({"trac": tracker, "type": "udp"})
+					elif tracker[0] == "h":
+						config.tracker_list.append({"trac": tracker, "type": "http"})
+			except:
+				print("Peers depleted")
+				break
+		#else:
+		peer_thread_list = []
+		message1 = (bytes(chr(19), 'utf-8') + bytes("BitTorrent protocol", 'utf-8') + bytes(8 * chr(0), "utf-8") + info_hash_sha1 + bytes(peer_id, "utf-8"));
+		config.peers_available = []	
+		for peer in config.peer_list:
+			ip1 = peer["ip"]
+			port1 = peer["port"]
+			t1 = threading.Thread(name='daemon', target=connect_to_peer, args=(ip1, port1, message1, info_hash_sha1))
+			peer_thread_list.append(t1)
+			t1.setDaemon(True)
+			t1.start()
+		for thr in peer_thread_list:
+			thr.join(4)
+		if len(config.peers_available) == 0:
+			print("No peers found")
+			break
+		config.peers_available.sort(key=sor)
+		keep_alive_thread_started = False
+		peer_deplete = False
+		config.peer_no = 0
+
+	while len(config.top4_peer_list) < 4 and config.peer_no < len(config.peers_available): #This loop maintains 4 peers at a time
 		lock = threading.Lock()
 		config.top4_peer_list.append(config.peers_available[config.peer_no])
 		t = threading.Thread(target = download_pieces, args=(lock, config.peers_available[config.peer_no],))
 		t.setDaemon(True)
 		t.start()
-		#top4_peer_list.append({"thread": t, "peers": config.peers_available[peer_no]})
-		#config.peers_available[peer_no]["pos"] = top4_pos
 		top4_pos += 1
 		print(f"\nPeer number is {config.peer_no}\n")
 		config.peer_no += 1
-	if config.pieces_acquisition == config.total_pieces:
+	
+	if config.pieces_acquisition == config.total_pieces: 
 		print("Download complete")
 		download_complete = True
 		break
-	# if config.peer_no + 1 == len(config.peers_available):
-	# 		peer_deplete = True
-	# 		break
+
 	if keep_alive_thread_started == False:
 		keep_alive_thread_started = True
 		keep_alive = threading.Thread(target = keep_alive_thread)
@@ -250,8 +281,5 @@ if not config.is_file:
 print("Done")	
 
 f.close()
-	
-#Connecting to peers ends here
 
-#torrent_socket.close()
 

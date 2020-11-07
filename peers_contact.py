@@ -7,7 +7,6 @@ import time
 #In this function I have connected to peers -> sent handshake message -> asked to unchoke me -> add them to the list of available peers if they unchoke else close the connection
 
 def connect_to_peer(ip, port, message1, info_hash_sha1):
-	global peers_available
 	bitfield = b''
 	handshake_completed = False # Sees that we get the bitpattern from the remote peer successfully
 	choke = True #Sees if the peer has choked us
@@ -130,22 +129,6 @@ def connect_to_peer(ip, port, message1, info_hash_sha1):
 							#print(f"Message: {Response}")
 						except:
 							handshake_completed = False
-		# if handshake_completed and choke:
-		# 	message = b''
-		# 	j = 1
-		# 	leng = j.to_bytes(4, "big")
-		# 	j = 2
-		# 	interested = j.to_bytes(1, "big")
-		# 	message = leng + interested
-		# 	client_socket.send(message)
-		# 	try:
-		# 		res = client_socket.recv(1024)
-		# 		print(f"\nFrom: {ip}\nMessage1: {Response}\nMessage2: {res}")
-		# 		if res == b'\x00\x00\x00\x01\x01':
-		# 			choke = False 
-		# 	except:
-		# 		handshake_completed = False
-		# 		#To throw away the peer not connecting with us
 
 		if handshake_completed:
 			h = bitfield.hex()

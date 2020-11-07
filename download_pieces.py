@@ -45,7 +45,6 @@ def download_pieces(lock ,peer):
 					end_point = end_point + 9
 				
 				if len(have_pieces) != 0:
-					#print(f"Have pieces: {have_pieces}\n")
 					h = peer["bitpattern"]
 					while len(have_pieces) > 0:
 						ind = have_pieces.pop(0)
@@ -62,8 +61,6 @@ def download_pieces(lock ,peer):
 		choked = False
 	if choked == False: 
 		while True:
-			#if len(top4_queue[0]) == 0:
-			#	continue
 			if len(config.request_queue) == 0:
 				continue
 			j = 13
@@ -71,10 +68,8 @@ def download_pieces(lock ,peer):
 			j = 6
 			ids = j.to_bytes(1, "big")
 			offset = 0
-			#index_piece = top4_queue[0].pop(0)
 			lock.acquire()
 			index_piece = -1
-			#index_piece = request_queue.pop(0)
 			for num in config.request_queue:
 				if peer["bitpattern"][num] == "1":
 					index_piece = num
@@ -84,26 +79,20 @@ def download_pieces(lock ,peer):
 			if index_piece == -1:
 				client_change = True
 				break
-			#print(f"Packet no. {index_piece} started")
 			ind = index_piece.to_bytes(4, "big")
 			beg = offset.to_bytes(4, "big")
 			leng = 0
 			if index_piece == (config.total_pieces - 1):
 				leng = config.last_piece_len
-				#print(f"Length = {last_piece_length}")
 			else:
 				leng = config.single_piece_len
-				#print(f"Length = {config.single_piece_len}")
 			block =  sizes
 			fix_len = block.to_bytes(4, "big")
-			#rem = leng % fix_len
 			tot = leng
-			#expected = leng + 13
 			res = b''
 			test = []
 			while offset < leng:
 				expected = block + 13
-				#print(f"offset = {offset}")
 				if leng - offset < sizes:
 					last = leng - offset
 					fix_len = last.to_bytes(4, "big")
@@ -115,7 +104,6 @@ def download_pieces(lock ,peer):
 				except:
 					client_change = True
 					break
-				#expected = fix_len + 13
 				try:
 					r = client_socket.recv(8192)
 					preff = unpack(">I", r[0: 4])[0]
@@ -129,7 +117,6 @@ def download_pieces(lock ,peer):
 						else:
 							r = r[preff + 5:]
 							preff = unpack(">I", r[0: 4])[0]		
-					#print(f"Message received: {r}\n")
 					if len(r) == 0:
 						client_no += 1
 						print("Client changed")
@@ -144,34 +131,21 @@ def download_pieces(lock ,peer):
 				res += r[13: preff + 4]
 				test.append(r)
 				offset += block
-			#print(f"Message len: {len(res)}")
 			if client_change:
-				#continue
 				lock.acquire()
 				config.request_queue.insert(0, num)
 				lock.release()
 				break
 			res_hash_val = hashlib.sha1(res).digest()
 			if res_hash_val == config.index_pieces_acquired[index_piece]["info_hash"]:
-				#piece_array.append(res)
-				#f.write(res)
-				
-				#index_piece += 1
 				offset = 0
-				print(f"Message len: {len(res)}\nPiece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}\n")
+				config.pieces_acquisition += 1
+				per = config.pieces_acquisition * 100 / config.total_pieces
+				print(f"Message len: {len(res)}\nPiece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}\nProgress: {round(per, 2)}%\n")
 				lock.acquire()
 				config.index_pieces_acquired[index_piece]["acquired"] = True
 				config.index_pieces_acq[index_piece] = 1
 				config.write_buffer.append({"index": index_piece, "piece": res})
-				# temp_list = config.index_pieces_acq[0 : index_piece]
-				# coun = temp_list.count(1)
-				# total_offset = coun * config.single_piece_len
-				# f.seek(total_offset, 0)
-				# rem_piece = f.read()
-				# f.seek(total_offset, 0)
-				# f.write(res)
-				# f.write(rem_piece)
-				config.pieces_acquisition += 1
 				lock.release()
 			else:
 				print(f"Message len: {len(res)}\nHash values aren't matching\nMessage: {r}")
@@ -205,3 +179,27 @@ def keep_alive_thread():
 			soc.send(mess)
 		time.sleep(100)		
 	print("Keep alive thread ends here")
+
+def sor(pieces):
+	return pieces['freq']
+
+def set_rarest_first():
+	pieces_freq = []
+	for pie in range(config.total_pieces):
+		item = dict()
+		item["index"] = pie
+		item["freq"] = 0
+		pieces_freq.append(item)
+	
+	for peer in config.peers_available:
+		for i, ch in enumerate(peer["bitpattern"]):
+			if ch == "1":
+				pieces_freq[i]["freq"] += 1
+
+	pieces_freq.sort(key=sor)
+
+	for pie in pieces_freq:
+		config.request_queue.append(pie["index"])
+	
+
+	

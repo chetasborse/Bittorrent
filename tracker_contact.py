@@ -78,6 +78,9 @@ def get_the_peers(info_has, peer_id, port, info_hash_sha1):
 	tracker_thread_list = []
 	tracker_pos = 0 #Tells the point index of tracker which was requested
 	tracker_end = tracker_pos + 4 #Tells maximum how many trackers should be requested at a time
+	config.peer_list = []
+	if len(config.tracker_list) == 0:
+		return False
 	for tracker in config.tracker_list:
 		if tracker["type"] == "http":
 			httpreq = convert_to_http(tracker["trac"], info_has, peer_id, config.uploaded, config.downloaded, config.left, port)
@@ -93,6 +96,7 @@ def get_the_peers(info_has, peer_id, port, info_hash_sha1):
 		tracker_pos += 1
 		if tracker_pos == tracker_end:
 			break	
-
+	config.tracker_list = config.tracker_list[tracker_end : len(config.tracker_list)]
 	for t in tracker_thread_list:
 		t.join(4)
+	return True

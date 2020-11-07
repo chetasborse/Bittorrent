@@ -23,6 +23,7 @@ def write_to_file(lock):
                 config.f.seek(offset, 0)
                 config.f.write(item["piece"])
             config.pieces_written += 1
+            config.downloaded += config.single_piece_len
         else:
             time.sleep(1)
             if config.pieces_written == config.total_pieces and is_file:
