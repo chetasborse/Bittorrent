@@ -47,14 +47,14 @@ except FileExistsError:
 
 config.download_path = path
 
-# seeding_enabled = True
-# seeding_socket = socket(AF_INET, SOCK_STREAM)
-# try:
-# 	seeding_socket.bind(('', config.port))
-# 	seeding_socket.listen(5) #Limit set to 5 
-# 	print("\nSeeding socket enabled\n")
-# except:
-# 	seeding_enabled = False
+seeding_enabled = True
+seeding_socket = socket(AF_INET, SOCK_STREAM)
+try:
+	seeding_socket.bind(('', config.port))
+	seeding_socket.listen(5) #Limit set to 5 
+	print("\nSeeding socket enabled\n")
+except:
+	seeding_enabled = False
 
 # ____________________Part 1 ends here____________________
 
@@ -130,7 +130,7 @@ config.global_tracker_list = config.tracker_list
 
 #____________________Part 3: Http/ UDP request to the tracker is made here and list of peers is obtained____________________
 
-"""
+
 #if there is no tracker list then use the tracker mentioned in announce
 if len(config.tracker_list) == 0:
 	if tracker[0] == "u":
@@ -154,21 +154,10 @@ print("Peer List")
 for peer in config.peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}")
 #Printing peers ends here
-"""
 
 
-
-
-
-
-config.peer_list = []
-config.peer_list = [{"ip": '127.0.0.3', "port": 7000}]
-
-
-
-
-
-
+#config.peer_list = [] #For seeding locally
+#config.peer_list = [{"ip": '127.0.0.3', "port": 7000}]
 
 
 #____________________Part 4: Connecting to the peers, handshaking____________________
@@ -293,7 +282,7 @@ if not config.is_file:
 
 #____________________Part 6 Seeding peers____________________
 
-"""
+
 if seeding_enabled:
 
 	res = input("\nDo you want to seed? (Y / N)")
@@ -332,7 +321,7 @@ if seeding_enabled:
 
 	
 	seeding_socket.close()
-"""
+
 #____________________Part 6 ends here____________________
 
 
