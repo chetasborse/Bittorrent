@@ -1,0 +1,11 @@
+--2020-11-10 00:48:10--  https://academictorrents.com/announce.php?info_hash=%ae%c9%7f%83t%cf%a5%b8%bc%e8l%d5B%87%0f%e8I%e1%af%b5&peer_id=-CS0001-922182941220&uploaded=0&downloaded=0&left=161539&port=6889&compact=1
+Resolving academictorrents.com (academictorrents.com)... 104.28.4.161, 172.67.149.156, 104.28.5.161, ...
+Connecting to academictorrents.com (academictorrents.com)|104.28.4.161|:443... connected.
+HTTP request sent, awaiting response... 200 ‘wget-log’
+Length: unspecified [text/plain]
+Saving to: ‘STDOUT’
+
+-                       [<=>                 ]       0  --.-KB/s               -                       [ <=>                ]       0  --.-KB/s    in 0s      
+
+
+Cannot write to ‘-’ (Success).

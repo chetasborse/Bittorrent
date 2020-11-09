@@ -34,4 +34,5 @@ request_queue = []
 write_buffer = []
 file_name = ''
 f = ''
+single_f = ''
 file_size = 0

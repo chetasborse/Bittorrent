@@ -16,11 +16,13 @@ from tracker_contact import http_tracker_connect, udp_tracker_connect, get_the_p
 from peers_contact import connect_to_peer
 from download_pieces import download_pieces, keep_alive_thread, set_rarest_first
 from write import write_to_file, write_to_multifile
+from seed import seed
 #to convert into hash values
 import hashlib
 import os
 
 
+#path = "/home/chetas/Desktop/Python All-In-One for Dummies.f60e849f18020861.torrent"
 #path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
 path = "./torrent_files/t1.torrent"
 
@@ -44,6 +46,16 @@ except FileExistsError:
 	pass
 
 config.download_path = path
+
+# seeding_enabled = True
+# seeding_socket = socket(AF_INET, SOCK_STREAM)
+# try:
+# 	seeding_socket.bind(('', config.port))
+# 	seeding_socket.listen(5) #Limit set to 5 
+# 	print("\nSeeding socket enabled\n")
+# except:
+# 	seeding_enabled = False
+
 # ____________________Part 1 ends here____________________
 
 
@@ -107,8 +119,10 @@ config.file_size = config.total_pieces * config.single_piece_len
 #creating an info hash for the file				
 info_hash_bencode = encode(info_hash)
 info_hash_sha1 = hashlib.sha1(info_hash_bencode).digest()
+config.info_hash = info_hash_sha1
 info_has = escape(info_hash_sha1)
 #Creation ends here
+print(f'infoHash: {info_hash_sha1}\n')
 config.global_tracker_list = config.tracker_list		
 
 #____________________Part 2 ends here____________________
@@ -116,7 +130,7 @@ config.global_tracker_list = config.tracker_list
 
 #____________________Part 3: Http/ UDP request to the tracker is made here and list of peers is obtained____________________
 
-
+"""
 #if there is no tracker list then use the tracker mentioned in announce
 if len(config.tracker_list) == 0:
 	if tracker[0] == "u":
@@ -140,6 +154,21 @@ print("Peer List")
 for peer in config.peer_list:
 	print(f"ip = {peer['ip']}\tport = {peer['port']}")
 #Printing peers ends here
+"""
+
+
+
+
+
+
+config.peer_list = []
+config.peer_list = [{"ip": '127.0.0.3', "port": 7000}]
+
+
+
+
+
+
 
 
 #____________________Part 4: Connecting to the peers, handshaking____________________
@@ -264,8 +293,46 @@ if not config.is_file:
 
 #____________________Part 6 Seeding peers____________________
 
+"""
+if seeding_enabled:
 
+	res = input("\nDo you want to seed? (Y / N)")
+	if res.lower() == n:
+		if config.is_file:
+			config.single_f.close()
+		else:
+			config.f.close()
+			if os.path.exists("temporary"):
+                os.remove("temporary")
+	else:
+		sys.exit()
 
+	#Notifying the trackers that we have completed the download process
+	config.tracker_list = config.global_tracker_list
+	if len(config.tracker_list) == 0:
+		if tracker[0] == "u":
+			config.tracker_list.append({"trac": tracker, "type": "udp"})
+		elif tracker[0] == "h":
+			config.tracker_list.append({"trac": tracker, "type": "http"})
+	print("Notified tracker successfully")
+	#Notifying ends here
+
+	seeding_peer_threads = []
+	print("Waiting to connect to a seeder")
+	try:
+		while True:
+			client, address = seeding_socket.accept()
+			print(f"\nConnection established with peer with id {address[0]} at port {address[1]}")
+			# seed_thread = threading.Thread(name = "seed_thread", target = seed, args= (client, message1, ))
+			seed_thread = threading.Thread(name = "seed_thread", target = seed, args= (client, message1, ))
+			seed_thread.start()
+			seeding_peer_threads.append(seed_thread)
+	except KeyboardInterrupt:
+		print("\nSeeding stopped\n")
+
+	
+	seeding_socket.close()
+"""
 #____________________Part 6 ends here____________________
 
 

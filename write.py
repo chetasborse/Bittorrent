@@ -9,7 +9,7 @@ def write_to_file(lock):
         config.f = open("temporary", "wb+")
     else:
         f_name = config.download_path + "/" + config.file_name
-        f = open(f_name, "wb+")
+        config.single_f = open(f_name, "wb+")
     while True:
         if len(config.write_buffer) != 0:
             lock.acquire()
@@ -17,8 +17,8 @@ def write_to_file(lock):
             lock.release()
             offset = item["index"] * config.single_piece_len
             if is_file:
-                f.seek(offset, 0)
-                f.write(item["piece"])
+                config.single_f.seek(offset, 0)
+                config.single_f.write(item["piece"])
             else:
                 config.f.seek(offset, 0)
                 config.f.write(item["piece"])
@@ -26,11 +26,13 @@ def write_to_file(lock):
             config.downloaded += config.single_piece_len
         else:
             time.sleep(1)
-            if config.pieces_written == config.total_pieces and is_file:
-                f.close()
+            if config.pieces_written == config.total_pieces:
                 break
-            elif config.pieces_written == config.total_pieces and not is_file:
-                break
+            # if config.pieces_written == config.total_pieces and is_file:
+            #     f.close()
+            #     break
+            # elif config.pieces_written == config.total_pieces and not is_file:
+            #     break
 
 
 def write_to_multifile():
@@ -55,8 +57,6 @@ def write_to_multifile():
                 f.close()
             config.f.close()
             break
-            if os.path.exists("temporary"):
-                os.remove("temporary")
         else:
             time.sleep(2)
     

@@ -141,7 +141,7 @@ def download_pieces(lock ,peer):
 				offset = 0
 				config.pieces_acquisition += 1
 				per = config.pieces_acquisition * 100 / config.total_pieces
-				print(f"Message len: {len(res)}\nPiece {index_piece} with hashval = {res_hash_val} downloaded from {peer['ip']}\nProgress: {round(per, 2)}%\n")
+				print(f"\nPiece with hashval = {res_hash_val} downloaded from {peer['ip']}\nProgress: {round(per, 2)}%\n")
 				lock.acquire()
 				config.index_pieces_acquired[index_piece]["acquired"] = True
 				config.index_pieces_acq[index_piece] = 1
