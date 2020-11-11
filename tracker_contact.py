@@ -2,7 +2,7 @@ import random
 from socket import *
 import config
 from Tracker import convert_to_peers
-from subprocess import STDOUT, check_output
+from subprocess import STDOUT, check_output, call
 from Decode import decode
 import threading
 from Encode import encode
@@ -10,12 +10,11 @@ from Tracker import convert_to_http
 
 #Connects to http trackers
 def http_tracker_connect(tracker, httpreq, info_has_sha1):
-	#global peer_list
 	connect = True
-	#print(httpreq)
 	try:
 		#data = subprocess.Popen(['wget', '-O', '-', httpreq], stdout=subprocess.PIPE).communicate()[0].strip()
 		data = check_output(['wget', '-O', '-', httpreq], timeout=10)
+		#data = call(['wget', '-O', '-', httpreq], timeout=10)
 	except Exception as e:
 		print(f"\nUnable to connect to the tracker {tracker}\nReason: {e}\n")
 		connect = False
@@ -98,5 +97,5 @@ def get_the_peers(info_has, peer_id, port, info_hash_sha1):
 			break	
 	config.tracker_list = config.tracker_list[tracker_end : len(config.tracker_list)]
 	for t in tracker_thread_list:
-		t.join(4)
+		t.join(10)
 	return True

@@ -2,11 +2,13 @@
 from Tracker import make_peer_id
 
 tracker = ""
+tracker_requests = 0
 download_path = ''
 folder_dets = [] #Details of folder if the torrent is multi file
 hash_code_list = []
 uploaded = 0
 downloaded = 0
+download_complete = False
 left = 0
 peer_id = make_peer_id()
 port = 6889
@@ -36,3 +38,6 @@ file_name = ''
 f = ''
 single_f = ''
 file_size = 0
+max_peers = 50
+upload_limit = 10000
+download_limit = 10000

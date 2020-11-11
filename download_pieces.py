@@ -52,8 +52,6 @@ def download_pieces(lock ,peer):
 						part2 = h[ind + 1: len(h)]
 						h = part1 + "1" + part2
 					peer["bitpattern"] = h
-				
-			print(f"\nMessage on interested: {Response}\n")
 		except Exception as e:
 			print(f"Error: {e}\n")
 			pass
@@ -177,8 +175,7 @@ def keep_alive_thread():
 		for i in range(start, end_peer):
 			soc = config.peers_available[i]["socket"]
 			soc.send(mess)
-		time.sleep(100)		
-	print("Keep alive thread ends here")
+		time.sleep(100)	
 
 def sor(pieces):
 	return pieces['freq']

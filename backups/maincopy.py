@@ -19,6 +19,13 @@ path = "./torrent_files/t1.torrent"
 #path = "/home/chetas/Desktop/sample.torrent"
 #path = "/home/chetas/Desktop/amusementsinmath16713gut_archive.torrent"
 #path = "/home/chetas/Desktop/big-buck-bunny.torrent"
+#path = "/home/chetas/Desktop/Python All-In-One for Dummies.f60e849f18020861.torrent"
+#path = "/home/chetas/Desktop/ubuntu-20.04.1-desktop-amd64.iso.torrent"
+#path = "./torrent_files/t1.torrent"
+
+#path = "/home/chetas/Desktop/t3.torrent"
+#path = "/home/chetas/Desktop/[KiruaSubs] Yesterday wo Utatte - Extra 06.ass.torrent"
+#path = "/home/chetas/Desktop/big-buck-bunny.torrent"
 
 # ____________________Part 1: Reading the torrent file____________________
 f = open(path, "rb")
