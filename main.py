@@ -202,7 +202,7 @@ for thr in peer_thread_list:
 #Sort the peers based on their rate of data transfer for top4
 def sor(peer):
 	return peer['rate']
-config.peers_available.sort(key=sor)
+config.peers_available.sort(key=sor, reverse=True)
 #____________________Part 4 ends here____________________
 
 
@@ -255,6 +255,9 @@ while len(config.peers_available) == 0 and config.tracker_requests < 3:
 
 #requesting ends here
 
+for peer in config.peers_available:
+	print(peer)
+	print("\n")
 
 set_rarest_first()
 

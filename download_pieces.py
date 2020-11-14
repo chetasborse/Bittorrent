@@ -59,6 +59,8 @@ def download_pieces(lock ,peer):
 		choked = False
 	if choked == False: 
 		while True:
+			downloaded_data = 0
+			downloaded_time = 0
 			if len(config.request_queue) == 0:
 				continue
 			j = 13
@@ -103,7 +105,11 @@ def download_pieces(lock ,peer):
 					client_change = True
 					break
 				try:
+					start = time.time()
 					r = client_socket.recv(8192)
+					end = time.time()
+					downloaded_data += len(r)
+					downloaded_time += end - start
 					preff = unpack(">I", r[0: 4])[0]
 					while len(r) > 0:
 						idd = unpack("B", r[4: 5])[0]
@@ -124,7 +130,11 @@ def download_pieces(lock ,peer):
 					client_change = True
 					break
 				while len(r) < expected:
+					start = time.time()
 					re = client_socket.recv(8192)
+					end = time.time()
+					downloaded_data += len(re)
+					downloaded_time += end - start
 					r = r + re
 				res += r[13: preff + 4]
 				test.append(r)
@@ -139,12 +149,17 @@ def download_pieces(lock ,peer):
 				offset = 0
 				config.pieces_acquisition += 1
 				per = config.pieces_acquisition * 100 / config.total_pieces
-				print(f"\nPiece with hashval = {res_hash_val} downloaded from {peer['ip']}\nProgress: {round(per, 2)}%\n")
+				rate = downloaded_data / (downloaded_time * 1024)
+				print(f"\nPiece with hashval = {res_hash_val} downloaded from {peer['ip']}\nProgress: {round(per, 2)}%\nPeer rate: {round(rate,2)} kbps\n")
 				lock.acquire()
 				config.index_pieces_acquired[index_piece]["acquired"] = True
 				config.index_pieces_acq[index_piece] = 1
 				config.write_buffer.append({"index": index_piece, "piece": res})
-				lock.release()
+				# for i in range(len(config.peers_available)):
+				# 	if config.peers_available[i]['ip'] == peer["ip"] and config.peers_available[i]['port'] == peer["port"]:
+				# 		config.peers_available[i]['rate'] = rate
+				# 		break
+				# lock.release()
 			else:
 				print(f"Message len: {len(res)}\nHash values aren't matching\nMessage: {r}")
 				for b in test:
