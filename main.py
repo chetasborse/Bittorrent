@@ -255,9 +255,9 @@ while len(config.peers_available) == 0 and config.tracker_requests < 3:
 
 #requesting ends here
 
-for peer in config.peers_available:
-	print(peer)
-	print("\n")
+# for peer in config.peers_available:
+# 	print(peer)
+# 	print("\n")
 
 set_rarest_first()
 

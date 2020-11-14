@@ -159,7 +159,7 @@ def download_pieces(lock ,peer):
 				# 	if config.peers_available[i]['ip'] == peer["ip"] and config.peers_available[i]['port'] == peer["port"]:
 				# 		config.peers_available[i]['rate'] = rate
 				# 		break
-				# lock.release()
+				lock.release()
 			else:
 				print(f"Message len: {len(res)}\nHash values aren't matching\nMessage: {r}")
 				for b in test:
